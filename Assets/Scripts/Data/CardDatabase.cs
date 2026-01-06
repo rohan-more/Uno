@@ -1,6 +1,18 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+[System.Serializable]
+public struct CardInstance
+{
+    public string CardId;
+
+    public CardInstance(string cardId)
+    {
+        CardId = cardId;
+    }
+}
+
+
 [CreateAssetMenu(fileName = "CardDatabase", menuName = "UNO/Card Database")]
 public class CardDatabase : ScriptableObject
 {
