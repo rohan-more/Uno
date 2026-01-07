@@ -12,6 +12,17 @@ public class HandView : MonoBehaviour
     private readonly List<CardInstance> hand = new();
     private readonly List<CardItem> items = new();
 
+    public CardItem GetCardItem(CardInstance instance)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (items[i].Instance.Equals(instance))
+                return items[i];
+        }
+
+        Debug.LogError($"CardItem not found for {instance.CardId}");
+        return null;
+    }
     public void BuildHand(List<CardInstance> newHand)
     {
         hand.Clear();

@@ -11,7 +11,7 @@ public class DebugHandBootstrap : MonoBehaviour
     {
         database.Initialize();
 
-        var hand = TestDeckBuilder.BuildRandomHand(database, 15);
+        var hand = TestDeckBuilder.BuildRandomHand(database, 5);
         handView.BuildHand(hand);
     }
 }
