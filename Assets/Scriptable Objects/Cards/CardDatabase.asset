@@ -44,32 +44,32 @@ MonoBehaviour:
     IsWild: 0
     DrawAmount: 0
   - Id: BLUE_0
-    Color: 0
+    Color: 3
     Type: 0
-    Number: 2
+    Number: 0
     FrontSprite: {fileID: 21300000, guid: 93a21f3da2107e1449f98715ca6b713b, type: 3}
     BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
-    DisplayName: Red 2
+    DisplayName: Blue 0
     AccentColor: {r: 0, g: 0, b: 1, a: 1}
     IsWild: 0
     DrawAmount: 0
   - Id: BLUE_1
-    Color: 0
+    Color: 3
     Type: 0
-    Number: 2
+    Number: 1
     FrontSprite: {fileID: 21300000, guid: 0ad75f8806cbba648b56a6460c9e3329, type: 3}
     BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
-    DisplayName: Red 2
+    DisplayName: Blue 1
     AccentColor: {r: 0, g: 0, b: 1, a: 1}
     IsWild: 0
     DrawAmount: 0
   - Id: BLUE_2
-    Color: 0
+    Color: 3
     Type: 0
     Number: 2
     FrontSprite: {fileID: 21300000, guid: d0fd29362a6810a408acefadfe504d76, type: 3}
     BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
-    DisplayName: Red 2
+    DisplayName: Blue 2
     AccentColor: {r: 0, g: 0, b: 1, a: 1}
     IsWild: 0
     DrawAmount: 0
