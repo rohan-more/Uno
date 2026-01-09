@@ -7,10 +7,20 @@ public class CardItem : MonoBehaviour
     [Header("UI")]
     [SerializeField] private Image cardImage;
     [SerializeField] private Button button;
-
+    private RectTransform rect;
     private CardInstance instance;
     private PlayerActionBus actionBus;
     private int playerIndex;
+    
+    public RectTransform RectTransform => rect;
+    public CardInstance Instance => instance;
+    public Sprite Sprite => cardImage.sprite;
+    
+    public CardInstance GetInstance() => instance;
+    void Awake()
+    {
+        rect = GetComponent<RectTransform>();
+    }
 
     public void Bind(CardInstance instance, Sprite sprite, PlayerActionBus bus, int playerIndex)
     {
@@ -45,6 +55,11 @@ public class CardItem : MonoBehaviour
             Card = instance
         });
     }
+    
+    public void SetVisible(bool visible)
+    {
+        cardImage.enabled = visible;
+        button.enabled = visible;
+    }
 
-    public CardInstance GetInstance() => instance;
 }

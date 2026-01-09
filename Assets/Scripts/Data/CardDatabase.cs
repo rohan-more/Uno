@@ -2,13 +2,18 @@ using UnityEngine;
 using System.Collections.Generic;
 
 [System.Serializable]
-public struct CardInstance
+public class CardInstance
 {
     public string CardId;
 
     public CardInstance(string cardId)
     {
         CardId = cardId;
+    }
+    
+    public CardDefinition GetDefinition(CardDatabase db)
+    {
+        return db.GetById(CardId);
     }
 }
 
