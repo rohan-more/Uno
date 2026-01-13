@@ -1,108 +1,80 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
-using DG.Tweening;
 
 public class CardProxyView : MonoBehaviour
 {
+    [Header("Refs")]
     [SerializeField] private Image cardImage;
-    [SerializeField] private float moveDuration = 0.25f;
-    [SerializeField] private Ease moveEase = Ease.OutCubic;
+    [SerializeField] private CanvasGroup canvasGroup;
+    [SerializeField] private RectTransform centerTransform;
+    [SerializeField] private Vector2  proxyIdlePosition;
+    [Header("Movement")]
+    [SerializeField] private float moveSpeed = 1500f; // units per second
 
     private RectTransform rt;
-    private Tween activeTween;
+    private Coroutine moveRoutine;
 
-    void Awake()
+    private void Awake()
     {
-
-        gameObject.SetActive(false);
-    }
-
-    public void Show(Sprite sprite, Vector2 startPos)
-    {
-        KillTween();
         rt = GetComponent<RectTransform>();
+        proxyIdlePosition = rt.anchoredPosition;
+        HideImmediate();
+    }
+
+    /// <summary>
+    /// Initializes the proxy at a given anchored position.
+    /// </summary>
+    public void Show(Sprite sprite)
+    {
+        StopMove();
+
         cardImage.sprite = sprite;
-        rt.anchoredPosition = startPos;
-        rt.localRotation = Quaternion.identity;
         rt.localScale = Vector3.one;
-
-        gameObject.SetActive(true);
-        LayoutRebuilder.ForceRebuildLayoutImmediate(rt);
+        rt.localRotation = Quaternion.identity;
+        canvasGroup.alpha = 1f;
     }
 
-    public void AnimateTo(Vector2 targetPos, System.Action onComplete = null)
+    /// <summary>
+    /// Moves the proxy to the target RectTransform at constant speed.
+    /// </summary>
+    public void MoveTo(System.Action onComplete = null)
     {
-        KillTween();
-        if (!gameObject.activeInHierarchy)
-            gameObject.SetActive(true);
-        activeTween = rt.DOAnchorPos(targetPos, moveDuration)
-            .SetEase(moveEase)
-            .OnComplete(() => onComplete?.Invoke());
+        StopMove();
+        moveRoutine = StartCoroutine(MoveAtConstantSpeed(centerTransform.anchoredPosition, onComplete));
     }
 
-    public void AnimateToDiscard(Vector2 targetPos, float scaleDown = 0.9f, System.Action onComplete = null)
+    private IEnumerator MoveAtConstantSpeed(Vector2 targetAnchoredPos, System.Action onComplete)
     {
-        KillTween();
-        if (!gameObject.activeInHierarchy)
-            gameObject.SetActive(true);
-        Sequence seq = DOTween.Sequence();
-        seq.Join(rt.DOAnchorPos(targetPos, moveDuration).SetEase(Ease.InCubic));
-        seq.Join(rt.DOScale(scaleDown, moveDuration));
-        seq.OnComplete(() => onComplete?.Invoke());
-
-        activeTween = seq;
-    }
-
-    public void Hide()
-    {
-        KillTween();
-        gameObject.SetActive(false);
-    }
-
-    private void KillTween()
-    {
-        if (activeTween != null && activeTween.IsActive())
-            activeTween.Kill();
-    }
-    
-    public void AnimateToAndVanish(Vector2 targetPos, float vanishScale = 0.85f, float vanishDuration = 0.08f, System.Action onComplete = null)
-    {
-        KillTween();
-        if (!gameObject.activeInHierarchy)
-            gameObject.SetActive(true);
-        Sequence seq = DOTween.Sequence();
-        seq.Append(rt.DOAnchorPos(targetPos, moveDuration).SetEase(moveEase));
-        seq.Append(rt.DOScale(vanishScale, vanishDuration));
-        seq.OnComplete(() =>
+        while (Vector2.Distance(rt.anchoredPosition, targetAnchoredPos) > 0.5f)
         {
-            Hide();
-            onComplete?.Invoke();
-        });
+            rt.anchoredPosition = Vector2.MoveTowards(rt.anchoredPosition, targetAnchoredPos, moveSpeed * Time.deltaTime);
 
-        activeTween = seq;
+            yield return null;
+        }
+
+        rt.anchoredPosition = targetAnchoredPos;
+        onComplete?.Invoke();
     }
-}
 
-
-public static class RectTransformUtil
-{
-    public static Vector2 WorldToAnchored(
-        RectTransform worldSource,
-        RectTransform targetParent)
+    private void ResetProxy()
     {
-        Vector2 screenPoint =
-            RectTransformUtility.WorldToScreenPoint(
-                null,
-                worldSource.position
-            );
+        rt.anchoredPosition = proxyIdlePosition;
+        canvasGroup.alpha = 0f;
+    }
 
-        RectTransformUtility.ScreenPointToLocalPointInRectangle(
-            targetParent,
-            screenPoint,
-            null,
-            out Vector2 localPoint
-        );
-
-        return localPoint;
+    public void HideImmediate()
+    {
+        cardImage.raycastTarget = false;
+        StopMove();
+        ResetProxy();
+    }
+    private void StopMove()
+    {
+        if (moveRoutine != null)
+        {
+            StopCoroutine(moveRoutine);
+            moveRoutine = null;
+        }
     }
 }
