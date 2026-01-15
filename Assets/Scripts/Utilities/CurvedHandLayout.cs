@@ -13,7 +13,7 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
     [SerializeField, Range(-1f, 1f)]
     private float verticalOffsetMultiplier = 0.35f;
     [SerializeField] private float horizontalOffset = 0f;
-
+    [SerializeField] private float eligibleLift = 30f;
     [Header("Scrolling")]
     [SerializeField] private float scrollSensitivity = 0.05f;
 
@@ -57,23 +57,25 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
 
         for (int i = 0; i < count; i++)
         {
+            RectTransform card = cards[i];
+            var item = card.GetComponent<CardItem>();
+            
             float angle = startAngle + i * minSpacingAngle;
             float rad = angle * Mathf.Deg2Rad;
 
             float x = Mathf.Sin(rad) * radius;
             float y = Mathf.Cos(rad) * radius;
 
-            Vector2 finalPos =
-                circleCenter +
-                new Vector2(x, y) +
-                new Vector2(horizontalOffset, verticalOffset);
-
-            RectTransform card = cards[i];
+            Vector2 finalPos = circleCenter + new Vector2(x, y) + new Vector2(horizontalOffset, verticalOffset);
+            if (item != null && item.IsEligible)
+            {
+                finalPos.y += eligibleLift;
+            }
             card.anchoredPosition = finalPos;
             card.localRotation = Quaternion.Euler(0, 0, -angle);
         }
     }
-
+    
     public void OnDrag(PointerEventData eventData)
     {
         if (currentCards == null || currentCards.Count <= 1)

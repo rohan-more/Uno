@@ -11,7 +11,7 @@ public class HandView : MonoBehaviour
 
     private readonly List<CardInstance> hand = new();
     private readonly List<CardItem> items = new();
-
+    private List<RectTransform> cardTransforms = new();
     public CardItem GetCardItem(CardInstance instance)
     {
         for (int i = 0; i < items.Count; i++)
@@ -30,9 +30,32 @@ public class HandView : MonoBehaviour
         Rebuild();
     }
 
+    public void CheckValidCards(RulesEngine rulesEngine, GameState gameState, PlayerState playerState)
+    {
+        cardTransforms.Clear();
+        for (int i = 0; i < hand.Count; i++)
+        {
+            var instance = hand[i];
+            var item = items[i];
+            cardTransforms.Add(item.RectTransform);
+            bool canPlay = rulesEngine.CanPlayCard(instance, gameState, playerState, out var matchedRule);
+
+            item.SetEligible(canPlay);
+
+            if (canPlay)
+            {
+                Debug.Log($"[HAND] Card {instance.CardId} is VALID (rule: {matchedRule.name})");
+            }
+        }
+        
+        layout.Layout(cardTransforms);
+    }
+
+
     public void RemoveCard(CardInstance card)
     {
         hand.Remove(card);
+
         Rebuild();
     }
 
@@ -68,23 +91,5 @@ public class HandView : MonoBehaviour
             rects.Add(item.GetComponent<RectTransform>());
 
         layout.Layout(rects);
-    }
-}
-
-public static class TestDeckBuilder
-{
-    public static List<CardInstance> BuildRandomHand(
-        CardDatabase database,
-        int count)
-    {
-        var result = new List<CardInstance>();
-
-        for (int i = 0; i < count; i++)
-        {
-            var def = database.Cards[Random.Range(0, database.Cards.Count)];
-            result.Add(new CardInstance(def.Id));
-        }
-
-        return result;
     }
 }

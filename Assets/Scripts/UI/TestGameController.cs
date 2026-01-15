@@ -73,6 +73,8 @@ public class TestGameController : MonoBehaviour
         
         // 5. HandView ONLY receives data
         handView.BuildHand(playerHand);
+        
+        handView.CheckValidCards(rulesEngine, gameState, playerState);
     }
 
     private void HandleAction(PlayerActionRequest request)
@@ -88,6 +90,7 @@ public class TestGameController : MonoBehaviour
 
             handView.AddCard(new CardInstance(random.Id));
         }
+        
     }
     
     private void TryPlayCard(PlayerActionRequest request)
@@ -137,6 +140,8 @@ public class TestGameController : MonoBehaviour
             CommitPlay(card);
             cardProxy.HideImmediate();
         });
+        
+        
 
     }
     
@@ -156,7 +161,7 @@ public class TestGameController : MonoBehaviour
 
         // 3. Cleanup
         selectedCard = null;
-
+        handView.CheckValidCards(rulesEngine, gameState, playerState);
         Debug.Log($"VALID PLAY: {def.Color} {def.Type} {def.Number}");
     }
     
