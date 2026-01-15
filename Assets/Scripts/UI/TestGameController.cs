@@ -8,8 +8,6 @@ public class TestGameController : MonoBehaviour
     [SerializeField] private DiscardPileView discardPileView;
     [SerializeField] private CardDatabase database;
     [SerializeField] private CardProxyView cardProxy;
-    [SerializeField] private RectTransform centerAnchor;
-    [SerializeField] private RectTransform discardAnchor;
     [SerializeField] private GameConfig gameConfig;
     private RulesEngine rulesEngine;
     private GameState gameState;
@@ -67,7 +65,7 @@ public class TestGameController : MonoBehaviour
         Debug.Log("First Card: " + gameState.CurrentNumber + " - " + gameState.CurrentColor);
         // 4. Deal remaining cards to player
         var playerHand = new List<CardInstance>();
-        int playerDeckMax = 5;
+        int playerDeckMax = 10;
         while (deck.Count > 0 && playerHand.Count < playerDeckMax)
         {
             playerHand.Add(deck.Draw());
@@ -75,6 +73,8 @@ public class TestGameController : MonoBehaviour
         
         // 5. HandView ONLY receives data
         handView.BuildHand(playerHand);
+        
+        handView.CheckValidCards(rulesEngine, gameState, playerState);
     }
 
     private void HandleAction(PlayerActionRequest request)
@@ -90,6 +90,7 @@ public class TestGameController : MonoBehaviour
 
             handView.AddCard(new CardInstance(random.Id));
         }
+        
     }
     
     private void TryPlayCard(PlayerActionRequest request)
@@ -115,19 +116,9 @@ public class TestGameController : MonoBehaviour
     {
         RectTransform proxyParent = cardProxy.transform.parent as RectTransform;
         selectedCard = card;
-        Vector2 startPos = RectTransformUtil.WorldToAnchored(card.RectTransform, proxyParent);
-        
-        Vector2 centerPos = RectTransformUtil.WorldToAnchored(centerAnchor, proxyParent);
-
         card.SetVisible(false);
 
-        cardProxy.Show(card.Sprite, startPos);
-        
-        cardProxy.AnimateToAndVanish(centerPos, onComplete: () => 
-            {
-         
-            }
-        );
+        cardProxy.Show(card.Sprite);
     }
     
     private void ConfirmPlay(CardItem card)
@@ -142,12 +133,16 @@ public class TestGameController : MonoBehaviour
             Deselect();
             return;
         }
-
-        // VALID → animate to discard
-        cardProxy.AnimateToDiscard(discardAnchor.anchoredPosition, onComplete: () =>
+        
+        cardProxy.Show(card.Sprite);
+        cardProxy.MoveTo(() =>
         {
             CommitPlay(card);
+            cardProxy.HideImmediate();
         });
+        
+        
+
     }
     
     private void CommitPlay(CardItem card)
@@ -165,9 +160,8 @@ public class TestGameController : MonoBehaviour
         handView.RemoveCard(card.Instance);
 
         // 3. Cleanup
-        cardProxy.Hide();
         selectedCard = null;
-
+        handView.CheckValidCards(rulesEngine, gameState, playerState);
         Debug.Log($"VALID PLAY: {def.Color} {def.Type} {def.Number}");
     }
     
@@ -176,7 +170,6 @@ public class TestGameController : MonoBehaviour
         if (selectedCard == null) return;
 
         selectedCard.SetVisible(true);
-        cardProxy.Hide();
         selectedCard = null;
     }
     

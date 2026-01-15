@@ -6,7 +6,9 @@ public class CardItem : MonoBehaviour
 {
     [Header("UI")]
     [SerializeField] private Image cardImage;
+    [SerializeField] private Outline cardOutline;
     [SerializeField] private Button button;
+    public bool IsEligible;
     private RectTransform rect;
     private CardInstance instance;
     private PlayerActionBus actionBus;
@@ -36,6 +38,13 @@ public class CardItem : MonoBehaviour
         button.interactable = value;
     }
 
+    public void SetEligible(bool value)
+    {
+        cardOutline.enabled = value;
+        IsEligible = value;
+    }
+
+    
     void OnEnable()
     {
         button.onClick.AddListener(OnClicked);
