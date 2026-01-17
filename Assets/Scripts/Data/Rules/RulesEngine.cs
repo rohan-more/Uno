@@ -23,7 +23,7 @@ public class RulesEngine
 
             if (Matches(rule.match, card, state, player))
             {
-                Debug.Log($"VALID via rule: {rule.name}");
+                //Debug.Log($"VALID via rule: {rule.name}");
                 matchedRule = rule;
                 return true;
             }

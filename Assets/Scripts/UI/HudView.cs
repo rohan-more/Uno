@@ -11,13 +11,13 @@ public class HudView : MonoBehaviour
     [SerializeField] private int playerIndex;
     void OnEnable()
     {
-        button.onClick.AddListener(OnClicked);
+        button.onClick.AddListener(OnDrawCardClicked);
         testButton.onClick.AddListener(ShowPopup);
     }
 
     private void OnDisable()
     {
-        button.onClick.RemoveListener(OnClicked);
+        button.onClick.RemoveListener(OnDrawCardClicked);
         testButton.onClick.RemoveListener(ShowPopup);
     }
 
@@ -26,12 +26,13 @@ public class HudView : MonoBehaviour
         PopupManager.Instance.Show(PopupType.ChooseColor);
     }
 
-    private void OnClicked()
+    private void OnDrawCardClicked()
     {
-        actionBus.Raise(new PlayerActionRequest
+        // To-Do
+        /*actionBus.RaiseCardDraw(new CardDrawEvent
         {
             PlayerIndex = playerIndex,
-            ActionType = PlayerActionType.DrawCard
-        });
+            Card = instance
+        });*/
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -5,10 +6,14 @@ public class TestGameController : MonoBehaviour
 {
     [SerializeField] private PlayerActionBus actionBus;
     [SerializeField] private HandView handView;
+    [SerializeField] private HandView botHandView;
     [SerializeField] private DiscardPileView discardPileView;
     [SerializeField] private CardDatabase database;
     [SerializeField] private CardProxyView cardProxy;
     [SerializeField] private GameConfig gameConfig;
+    
+    private PlayerController[] players;
+    private int currentPlayerIndex;
     private RulesEngine rulesEngine;
     private GameState gameState;
     private PlayerState playerState;
@@ -30,7 +35,9 @@ public class TestGameController : MonoBehaviour
         gameState = new GameState();
         playerState = new PlayerState { PlayerId = 0 };
         rulesEngine = new RulesEngine(gameConfig.rules, database);
-        
+
+        SetupPlayers();
+        StartTurn(0); 
         var numberCards = new List<CardInstance>();
         var otherCards = new List<CardInstance>();
 
@@ -61,19 +68,24 @@ public class TestGameController : MonoBehaviour
         gameState.CurrentType = startDef.Type;
         gameState.CurrentNumber = startDef.Number;
         discardPileView.SetTopCard(startCard, startDef.FrontSprite);
-        Debug.Log("startCard: " + startCard.CardId);
-        Debug.Log("First Card: " + gameState.CurrentNumber + " - " + gameState.CurrentColor);
+
         // 4. Deal remaining cards to player
         var playerHand = new List<CardInstance>();
-        int playerDeckMax = 10;
+        var botHand = new List<CardInstance>();
+        
+        int playerDeckMax = 7;
         while (deck.Count > 0 && playerHand.Count < playerDeckMax)
         {
             playerHand.Add(deck.Draw());
+            botHand.Add(deck.Draw());
         }
+        
+        players[0].State.Hand = playerHand;
+        players[1].State.Hand = botHand;
         
         // 5. HandView ONLY receives data
         handView.BuildHand(playerHand);
-        
+        botHandView.BuildHand(botHand);
         handView.CheckValidCards(rulesEngine, gameState, playerState);
     }
 
@@ -93,9 +105,46 @@ public class TestGameController : MonoBehaviour
         
     }
     
+    private void StartTurn(int playerIndex)
+    {
+        currentPlayerIndex = playerIndex;
+
+        Debug.Log($"TURN START: Player {playerIndex}");
+
+        players[playerIndex].DecisionMaker.RequestAction(players[playerIndex].State, gameState, rulesEngine, database, HandleAction);
+    }
+    
+    private void StartBotTurn(int playerIndex)
+    {
+        currentPlayerIndex = playerIndex;
+
+        Debug.Log($"TURN START: Player {playerIndex}");
+
+        players[playerIndex].DecisionMaker.RequestAction(players[playerIndex].State, gameState, rulesEngine, database, HandleAction);
+    }
+    
+    private void SetupPlayers()
+    {
+        players = new PlayerController[2];
+
+        // Player 0 = YOU
+        players[0] = new PlayerController
+        {
+            State = playerState, // your existing PlayerState
+            DecisionMaker = new HumanDecisionMaker(actionBus)
+        };
+
+        // Player 1 = BOT (test stub)
+        players[1] = new PlayerController
+        {
+            State = new PlayerState { PlayerId = 1 },
+            DecisionMaker = new BotDecisionMaker()
+        };
+    }
+    
     private void TryPlayCard(PlayerActionRequest request)
     {
-        CardItem card = handView.GetCardItem(request.Card);
+        CardItem card = currentPlayerIndex == 0 ? handView.GetCardItem(request.Card) :  botHandView.GetCardItem(request.Card);
         selectedCard = card;
         if (selectedCard == null)
         {
@@ -117,8 +166,14 @@ public class TestGameController : MonoBehaviour
         RectTransform proxyParent = cardProxy.transform.parent as RectTransform;
         selectedCard = card;
         card.SetVisible(false);
-
-        cardProxy.Show(card.Sprite);
+        if(currentPlayerIndex == 0)
+        {
+            cardProxy.Show(card.Sprite, PlayerSeat.BottomPlayer);
+        }
+        else
+        {
+            cardProxy.Show(card.Sprite, PlayerSeat.TopPlayer);
+        }
     }
     
     private void ConfirmPlay(CardItem card)
@@ -134,15 +189,24 @@ public class TestGameController : MonoBehaviour
             return;
         }
         
-        cardProxy.Show(card.Sprite);
-        cardProxy.MoveTo(() =>
+        if(currentPlayerIndex == 0)
         {
-            CommitPlay(card);
-            cardProxy.HideImmediate();
-        });
-        
-        
-
+            cardProxy.Show(card.Sprite, PlayerSeat.BottomPlayer);
+            cardProxy.MoveTo(() =>
+            {
+                CommitPlay(card);
+                cardProxy.HideImmediate();
+            });
+        }
+        else
+        {
+            cardProxy.Show(card.Sprite, PlayerSeat.TopPlayer);
+            cardProxy.MoveTo(() =>
+            {
+                CommitPlay(card);
+                cardProxy.HideImmediate();
+            });
+        }
     }
     
     private void CommitPlay(CardItem card)
@@ -155,14 +219,53 @@ public class TestGameController : MonoBehaviour
         gameState.CurrentType = def.Type;
         gameState.CurrentNumber = def.Number;
 
+        players[currentPlayerIndex].State.Hand.Remove(card.Instance);
         // 2. Update views
         discardPileView.SetTopCard(card.Instance, def.FrontSprite);
-        handView.RemoveCard(card.Instance);
+        if (currentPlayerIndex == 0)
+        {
+            handView.RemoveCard(card.Instance);
+        }
+        else
+        {
+            botHandView.RemoveCard(card.Instance);
+        }
 
         // 3. Cleanup
         selectedCard = null;
-        handView.CheckValidCards(rulesEngine, gameState, playerState);
+        if (currentPlayerIndex == 0)
+        {
+            handView.CheckValidCards(rulesEngine, gameState, players[0].State);
+        }
         Debug.Log($"VALID PLAY: {def.Color} {def.Type} {def.Number}");
+        EndTurn();
+    }
+    
+    private void EndTurn()
+    {
+        int nextPlayer = (currentPlayerIndex + 1) % players.Length;
+
+        if (nextPlayer == 1)
+        {
+            // BOT TURN (TEST)
+            StartCoroutine(SimulateBotTurn());
+        }
+        else
+        {
+            // BACK TO YOU
+            StartTurn(0);
+        }
+    }
+    
+    private IEnumerator SimulateBotTurn()
+    {
+        Debug.Log("BOT THINKING...");
+        yield return new WaitForSeconds(2f);
+        StartBotTurn(1);
+        // TEST behavior: do nothing / draw / auto-end
+        Debug.Log("BOT DONE");
+
+        //StartTurn(0);
     }
     
     private void Deselect()

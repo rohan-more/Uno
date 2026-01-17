@@ -18,12 +18,43 @@ public struct PlayerActionRequest
     public CardInstance Card;   // optional
     public CardColor ChosenColor; // optional
 }
+
+public struct CardClickedEvent
+{
+    public int PlayerIndex;
+    public CardInstance Card;
+}
+
+public struct CardDrawEvent
+{
+    public int PlayerIndex;
+    public CardInstance Card;
+}
+
+
+public enum PlayerSeat
+{
+    BottomPlayer,
+    BottomLeftPlayer,
+    BottomRightPlayer,
+    TopPlayer,
+    TopLeftPlayer,
+    TopRightPlayer,
+    RightPlayer,
+    Deck
+}
+
 public class PlayerActionBus : MonoBehaviour
 {
+    public event Action<CardClickedEvent> OnCardClicked;
+    
+    public event Action<CardDrawEvent> OnCardDraw;
     public event Action<PlayerActionRequest> OnActionRequested;
 
-    public void Raise(PlayerActionRequest request)
-    {
-        OnActionRequested?.Invoke(request);
-    }
+    public void RaiseCardClicked(CardClickedEvent evt) => OnCardClicked?.Invoke(evt);
+
+    public void RaiseAction(PlayerActionRequest req) => OnActionRequested?.Invoke(req);
+
+    public void RaiseCardDraw(CardDrawEvent obj) => OnCardDraw?.Invoke(obj);
+
 }

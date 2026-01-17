@@ -42,5 +42,5 @@ public class PlayerState
 {
     public int PlayerId;
     public List<CardInstance> Hand = new();
-    
+    public PlayerSeat PlayerSeat;
 }
