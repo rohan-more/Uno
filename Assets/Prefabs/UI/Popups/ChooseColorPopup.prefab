@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 6595695674235294125}
   - component: {fileID: 4916749104134483305}
   m_Layer: 5
-  m_Name: Image (1)
+  m_Name: Yellow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -133,7 +133,7 @@ GameObject:
   - component: {fileID: 5053520298403076867}
   - component: {fileID: 5894819409083320466}
   m_Layer: 5
-  m_Name: Image (2)
+  m_Name: Green
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -324,6 +324,7 @@ GameObject:
   - component: {fileID: 4550236209005979179}
   - component: {fileID: 3067240340288606654}
   - component: {fileID: 1566636097873221459}
+  - component: {fileID: 864453390943444353}
   m_Layer: 5
   m_Name: ChooseColorPopup
   m_TagString: Untagged
@@ -377,6 +378,23 @@ MonoBehaviour:
   transitionDuration: 0.35
   easeIn: 9
   easeOut: 8
+--- !u!114 &864453390943444353
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1881435556401038478}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8334314cdf5df4d4f980788cd95e8980, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  actionBus: {fileID: 0}
+  redButton: {fileID: 799847713909043664}
+  blueButton: {fileID: 6222001840284864316}
+  yellowButton: {fileID: 4916749104134483305}
+  greenButton: {fileID: 5894819409083320466}
 --- !u!1 &6105142354174918947
 GameObject:
   m_ObjectHideFlags: 0
@@ -599,7 +617,7 @@ GameObject:
   - component: {fileID: 4113626766811236017}
   - component: {fileID: 799847713909043664}
   m_Layer: 5
-  m_Name: Image
+  m_Name: Red
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -796,7 +814,7 @@ GameObject:
   - component: {fileID: 1551977197330635305}
   - component: {fileID: 6222001840284864316}
   m_Layer: 5
-  m_Name: Image (3)
+  m_Name: Blue
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

@@ -28,11 +28,10 @@ public class HudView : MonoBehaviour
 
     private void OnDrawCardClicked()
     {
-        // To-Do
-        /*actionBus.RaiseCardDraw(new CardDrawEvent
+        actionBus.RaiseAction(new PlayerActionRequest
         {
-            PlayerIndex = playerIndex,
-            Card = instance
-        });*/
+            ActionType = PlayerActionType.DrawCard,
+            PlayerIndex = playerIndex
+        });
     }
 }

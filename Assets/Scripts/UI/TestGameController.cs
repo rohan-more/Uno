@@ -1,6 +1,8 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 public class TestGameController : MonoBehaviour
 {
@@ -11,24 +13,167 @@ public class TestGameController : MonoBehaviour
     [SerializeField] private CardDatabase database;
     [SerializeField] private CardProxyView cardProxy;
     [SerializeField] private GameConfig gameConfig;
+    [SerializeField] private CardColor ChosenCardColor;
     
+    [Header("Testing")]
+    [SerializeField] private bool useTestHand;
+    [SerializeField] private int testHandSize = 7;
+    [SerializeField] private List<string> testCardIds;
     private PlayerController[] players;
+    private DeckModel deck;
     private int currentPlayerIndex;
     private RulesEngine rulesEngine;
     private GameState gameState;
     private PlayerState playerState;
     private CardItem selectedCard;
-    private void Awake()
+    private CardPlayResolver resolver;
+
+    private void OnEnable()
     {
         actionBus.OnActionRequested += HandleAction;
+        actionBus.OnCardColor += ChooseWildColor;
+        actionBus.OnCardDraw += HandleCardsDrawn;
     }
 
     private void OnDestroy()
     {
         actionBus.OnActionRequested -= HandleAction;
+        actionBus.OnCardColor -= ChooseWildColor;
+        actionBus.OnCardDraw  -= HandleCardsDrawn;
     }
     
     void Start()
+    {
+        InitializeSystems();
+        SetupPlayers();
+        InitializeDeckAndGameState();
+        DealInitialHands();
+        resolver = new CardPlayResolver(rulesEngine, gameState, players, database, deck,actionBus);
+        StartFirstTurn();
+    }
+    
+    
+    private void InitializeDeckAndGameState()
+    {
+        var numberCards = new List<CardInstance>();
+        var otherCards = new List<CardInstance>();
+
+        foreach (var def in database.Cards)
+        {
+            var instance = new CardInstance(def.Id);
+
+            if (def.Type == CardType.Number)
+                numberCards.Add(instance);
+            else
+                otherCards.Add(instance);
+        }
+
+        int startIndex = UnityEngine.Random.Range(0, numberCards.Count);
+        CardInstance startCard = numberCards[startIndex];
+        numberCards.RemoveAt(startIndex);
+
+        var remainingCards = new List<CardInstance>();
+        remainingCards.AddRange(numberCards);
+        remainingCards.AddRange(otherCards);
+
+        deck = new DeckModel(remainingCards);
+        deck.Shuffle(new System.Random());
+
+        var startDef = startCard.GetDefinition(database);
+
+        gameState.DiscardPile.Add(startCard);
+        gameState.CurrentColor = startDef.Color;
+        gameState.CurrentType = startDef.Type;
+        gameState.CurrentNumber = startDef.Number;
+
+        discardPileView.SetTopCard(startCard, startDef.FrontSprite);
+    }
+    
+    private void DealInitialHands()
+    {
+        players[0].State.Hand = new List<CardInstance>();
+        players[1].State.Hand = new List<CardInstance>();
+
+        if (useTestHand)
+        {
+            GiveTestHand(players[0].State);
+        }
+        else
+        {
+            DealCards(players[0].State, testHandSize);
+        }
+
+        // Bot is always random for now
+        DealCards(players[1].State, testHandSize);
+
+        handView.BuildHand(players[0].State.Hand);
+        botHandView.BuildHand(players[1].State.Hand);
+
+        handView.CheckValidCards(rulesEngine, gameState, players[0].State);
+    }
+    
+    private void GiveTestHand(PlayerState player)
+    {
+        player.Hand.Clear();
+
+        // 1. Add forced test cards
+        foreach (var id in testCardIds)
+        {
+            if (player.Hand.Count >= testHandSize)
+                break;
+
+            player.Hand.Add(new CardInstance(id));
+            RemoveFromDeck(id);
+        }
+
+        // 2. Fill remaining slots randomly
+        int remaining = testHandSize - player.Hand.Count;
+
+        for (int i = 0; i < remaining; i++)
+        {
+            player.Hand.Add(deck.Draw());
+        }
+
+        // 3. Rebuild UI
+        handView.BuildHand(player.Hand);
+    }
+
+    private void RemoveFromDeck(string cardId)
+    {
+        for (int i = 0; i < deck.Count; i++)
+        {
+            if (deck.Peek(i).CardId == cardId)
+            {
+                deck.Remove(cardId);
+                return;
+            }
+        }
+
+        Debug.LogWarning($"Test card {cardId} not found in deck");
+    }
+    
+    private void DealCards(PlayerState player, int count)
+    {
+        for (int i = 0; i < count; i++)
+            player.Hand.Add(deck.Draw());
+    }
+    
+    private void StartFirstTurn()
+    {
+        StartTurn(0);
+    }
+    
+    private void InitializeSystems()
+    {
+        database.Initialize();
+
+        gameState = new GameState();
+        playerState = new PlayerState { PlayerId = 0 };
+
+        rulesEngine = new RulesEngine(gameConfig.rules, database);
+    }
+    
+    /*void Start()
     {
         database.Initialize();
         
@@ -87,8 +232,14 @@ public class TestGameController : MonoBehaviour
         handView.BuildHand(playerHand);
         botHandView.BuildHand(botHand);
         handView.CheckValidCards(rulesEngine, gameState, playerState);
-    }
+        
+        resolver = new CardPlayResolver(rulesEngine, gameState, players, database);
+    }*/
 
+    private void ChooseWildColor(CardColor color)
+    {
+        ChosenCardColor = color;
+    }
     private void HandleAction(PlayerActionRequest request)
     {
         if (request.ActionType == PlayerActionType.PlayCard)
@@ -97,12 +248,42 @@ public class TestGameController : MonoBehaviour
         }
         else if (request.ActionType == PlayerActionType.DrawCard)
         {
-            var random = database.Cards[
-                Random.Range(0, database.Cards.Count)];
-
-            handView.AddCard(new CardInstance(random.Id));
+            HandleDraw(request.PlayerIndex);
         }
         
+    }
+    
+    private void HandleDraw(int playerIndex)
+    {
+        var drawn = resolver.DrawCards(playerIndex, 1);
+
+        HandleCardsDrawn(new CardDrawEvent
+        {
+            PlayerIndex = playerIndex,
+            Cards = drawn
+        });
+    }
+    
+    /*
+    private void SkipNextPlayer()
+    {
+         currentPlayerIndex = GetNextPlayerIndex(currentPlayerIndex);
+    }
+    */
+
+    
+    private void HandleCardsDrawn(CardDrawEvent evt)
+    {
+        if (evt.PlayerIndex == 0)
+        {
+            foreach (var card in evt.Cards)
+                handView.AddCard(card);
+        }
+        else
+        {
+            foreach (var card in evt.Cards)
+                botHandView.AddCard(card);
+        }
     }
     
     private void StartTurn(int playerIndex)
@@ -178,67 +359,48 @@ public class TestGameController : MonoBehaviour
     
     private void ConfirmPlay(CardItem card)
     {
-        // VALIDITY CHECK (authoritative)
-        if (!rulesEngine.CanPlayCard(card.Instance, gameState, playerState, out _))
-        {
-            var def = card.Instance.GetDefinition(database);
-            Debug.Log($"INVALID PLAY: {def.Color} {def.Type} {def.Number}");
+        var result = resolver.TryPlayCard(currentPlayerIndex, card.Instance);
 
-            // Roll back preview
+        if (result == PlayResult.Invalid)
+        {
             Deselect();
             return;
         }
-        
-        if(currentPlayerIndex == 0)
+
+        PlayerSeat seat = currentPlayerIndex == 0 ? PlayerSeat.BottomPlayer : PlayerSeat.TopPlayer;
+
+        cardProxy.Show(card.Sprite, seat);
+        cardProxy.MoveTo(() =>
         {
-            cardProxy.Show(card.Sprite, PlayerSeat.BottomPlayer);
-            cardProxy.MoveTo(() =>
+            discardPileView.SetTopCard(card.Instance, card.Instance.GetDefinition(database).FrontSprite);
+
+            RemoveFromHandView(card);
+
+            if (result == PlayResult.AwaitingWildColor)
             {
-                CommitPlay(card);
-                cardProxy.HideImmediate();
-            });
-        }
-        else
-        {
-            cardProxy.Show(card.Sprite, PlayerSeat.TopPlayer);
-            cardProxy.MoveTo(() =>
+                //ShowWildColorPopup(); // UI only
+                PopupManager.Instance.Show(PopupType.ChooseColor, null, () =>
+                {
+                    Debug.Log("Chosen Color: " + ChosenCardColor);
+                    resolver.ResolveWild(ChosenCardColor);
+                    EndTurn();
+                });
+            }
+            else
             {
-                CommitPlay(card);
-                cardProxy.HideImmediate();
-            });
-        }
+                EndTurn();
+            }
+
+            cardProxy.HideImmediate();
+        });
     }
     
-    private void CommitPlay(CardItem card)
+    private void RemoveFromHandView(CardItem card)
     {
-        var def = card.Instance.GetDefinition(database);
-
-        // 1. Update game state
-        gameState.DiscardPile.Add(card.Instance);
-        gameState.CurrentColor = def.Color;
-        gameState.CurrentType = def.Type;
-        gameState.CurrentNumber = def.Number;
-
-        players[currentPlayerIndex].State.Hand.Remove(card.Instance);
-        // 2. Update views
-        discardPileView.SetTopCard(card.Instance, def.FrontSprite);
         if (currentPlayerIndex == 0)
-        {
             handView.RemoveCard(card.Instance);
-        }
         else
-        {
             botHandView.RemoveCard(card.Instance);
-        }
-
-        // 3. Cleanup
-        selectedCard = null;
-        if (currentPlayerIndex == 0)
-        {
-            handView.CheckValidCards(rulesEngine, gameState, players[0].State);
-        }
-        Debug.Log($"VALID PLAY: {def.Color} {def.Type} {def.Number}");
-        EndTurn();
     }
     
     private void EndTurn()

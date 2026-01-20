@@ -28,9 +28,8 @@ public struct CardClickedEvent
 public struct CardDrawEvent
 {
     public int PlayerIndex;
-    public CardInstance Card;
+    public List<CardInstance> Cards;
 }
-
 
 public enum PlayerSeat
 {
@@ -47,7 +46,7 @@ public enum PlayerSeat
 public class PlayerActionBus : MonoBehaviour
 {
     public event Action<CardClickedEvent> OnCardClicked;
-    
+    public event Action<CardColor> OnCardColor;
     public event Action<CardDrawEvent> OnCardDraw;
     public event Action<PlayerActionRequest> OnActionRequested;
 
@@ -56,5 +55,7 @@ public class PlayerActionBus : MonoBehaviour
     public void RaiseAction(PlayerActionRequest req) => OnActionRequested?.Invoke(req);
 
     public void RaiseCardDraw(CardDrawEvent obj) => OnCardDraw?.Invoke(obj);
+
+    public void RaiseCardColor(CardColor obj) => OnCardColor?.Invoke(obj);
 
 }

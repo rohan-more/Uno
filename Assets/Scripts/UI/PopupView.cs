@@ -44,11 +44,18 @@ public class PopupView : MonoBehaviour
         rt.anchoredPosition = hiddenPos;
         activeTween = rt.DOAnchorPos(visiblePos, transitionDuration).SetEase(easeIn);
     }
+    
+    protected void Complete()
+    {
+        onCompleted?.Invoke();
+        onCompleted = null;
+    }
 
     public virtual void Hide()
     {
         KillTween();
         activeTween = rt.DOAnchorPos(GetExitPosition(), transitionDuration).SetEase(easeOut).OnComplete(() => gameObject.SetActive(false));
+        Complete();
     }
  
     private Vector2 GetHiddenPosition()
