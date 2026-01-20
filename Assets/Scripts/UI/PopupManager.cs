@@ -51,9 +51,7 @@ public class PopupManager : MonoBehaviour, IPopupService
         PopupView instance = Instantiate(prefab, transform);
         activePopup = instance;
 
-        instance.Show(
-            context,
-            () =>
+        instance.Show(context, () =>
             {
                 onCompleted?.Invoke();
                 Destroy(instance.gameObject);

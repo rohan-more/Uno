@@ -1,9 +1,16 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum HandViewMode
+{
+    Human,
+    BotDebug
+}
 
 public class HandView : MonoBehaviour
 {
+    [SerializeField] private HandViewMode mode;
+    [SerializeField] private int ownerPlayerId;
     [SerializeField] private CardItem cardPrefab;
     [SerializeField] private CurvedHandLayout layout;
     [SerializeField] private CardDatabase database;
@@ -28,6 +35,12 @@ public class HandView : MonoBehaviour
         hand.Clear();
         hand.AddRange(newHand);
         Rebuild();
+        /*bool interactable = mode == HandViewMode.Human;
+
+        foreach (var cardItem in items)
+        {
+            cardItem.SetInteractable(interactable);
+        }*/
     }
 
     public void CheckValidCards(RulesEngine rulesEngine, GameState gameState, PlayerState playerState)
@@ -44,7 +57,7 @@ public class HandView : MonoBehaviour
 
             if (canPlay)
             {
-                Debug.Log($"[HAND] Card {instance.CardId} is VALID (rule: {matchedRule.name})");
+                //Debug.Log($"[HAND] Card {instance.CardId} is VALID (rule: {matchedRule.name})");
             }
         }
         

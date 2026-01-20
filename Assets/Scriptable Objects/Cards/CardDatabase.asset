@@ -43,6 +43,86 @@ MonoBehaviour:
     AccentColor: {r: 1, g: 0, b: 0, a: 1}
     IsWild: 0
     DrawAmount: 0
+  - Id: RED_2
+    Color: 0
+    Type: 0
+    Number: 2
+    FrontSprite: {fileID: 21300000, guid: 92a81299baabc42428d46f66624ed9ea, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 2
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_3
+    Color: 0
+    Type: 0
+    Number: 3
+    FrontSprite: {fileID: 21300000, guid: d67e60c3d32e5fa40adadbc78a695357, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 3
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_4
+    Color: 0
+    Type: 0
+    Number: 4
+    FrontSprite: {fileID: 21300000, guid: 774ee693a987f274f84a25979eed522d, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 4
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_5
+    Color: 0
+    Type: 0
+    Number: 5
+    FrontSprite: {fileID: 21300000, guid: 06016eec237335c47b93d58288ba167d, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 5
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_6
+    Color: 0
+    Type: 0
+    Number: 6
+    FrontSprite: {fileID: 21300000, guid: ad51ccac4df909b4393cba5d2b24b02e, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 5
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_7
+    Color: 0
+    Type: 0
+    Number: 7
+    FrontSprite: {fileID: 21300000, guid: d6a170682c3b8874d8034ac8d31b1bfa, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 7
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_8
+    Color: 0
+    Type: 0
+    Number: 8
+    FrontSprite: {fileID: 21300000, guid: f8afdf08a0f55fd4ab8e1fd2438182da, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 8
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: RED_9
+    Color: 0
+    Type: 0
+    Number: 9
+    FrontSprite: {fileID: 21300000, guid: 1745bc0294753a74793c433c83905e46, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red 9
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 0
   - Id: BLUE_0
     Color: 3
     Type: 0
@@ -70,6 +150,76 @@ MonoBehaviour:
     FrontSprite: {fileID: 21300000, guid: d0fd29362a6810a408acefadfe504d76, type: 3}
     BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
     DisplayName: Blue 2
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_3
+    Color: 3
+    Type: 0
+    Number: 3
+    FrontSprite: {fileID: 21300000, guid: f0a35ea8b2420674fa9ed594fc998371, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 3
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_4
+    Color: 3
+    Type: 0
+    Number: 4
+    FrontSprite: {fileID: 21300000, guid: 2e4178821cc19b14c9dcbc43985b1644, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 3
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_5
+    Color: 3
+    Type: 0
+    Number: 5
+    FrontSprite: {fileID: 21300000, guid: 168e8468d0ddc7e4eb89383b1f4f7016, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 5
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_6
+    Color: 3
+    Type: 0
+    Number: 6
+    FrontSprite: {fileID: 21300000, guid: 8dd602e30c2bf1c438c1354f0765c751, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 5
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_7
+    Color: 3
+    Type: 0
+    Number: 7
+    FrontSprite: {fileID: 21300000, guid: 34ba3feb28dcca348a27977cc70172da, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 5
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_8
+    Color: 3
+    Type: 0
+    Number: 8
+    FrontSprite: {fileID: 21300000, guid: f28baefd1a39b3a4cb00422e831db02e, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 5
+    AccentColor: {r: 0, g: 0, b: 1, a: 1}
+    IsWild: 0
+    DrawAmount: 0
+  - Id: BLUE_9
+    Color: 3
+    Type: 0
+    Number: 9
+    FrontSprite: {fileID: 21300000, guid: deedc119650a2574ebe0ca2bdf797cae, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Blue 5
     AccentColor: {r: 0, g: 0, b: 1, a: 1}
     IsWild: 0
     DrawAmount: 0
@@ -113,13 +263,13 @@ MonoBehaviour:
     AccentColor: {r: 1, g: 1, b: 1, a: 1}
     IsWild: 1
     DrawAmount: 0
-  - Id: WILD_DRAW_4
+  - Id: WILD_DRAW_FOUR
     Color: 4
     Type: 5
     Number: 0
     FrontSprite: {fileID: 21300000, guid: b10b03480432aa749af8c1e8c381024b, type: 3}
     BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
-    DisplayName: Wild Draw 4
+    DisplayName: Wild
     AccentColor: {r: 1, g: 1, b: 1, a: 1}
     IsWild: 1
-    DrawAmount: 0
+    DrawAmount: 4

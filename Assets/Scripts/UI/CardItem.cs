@@ -57,10 +57,16 @@ public class CardItem : MonoBehaviour
 
     private void OnClicked()
     {
-        actionBus.Raise(new PlayerActionRequest
+        /*actionBus.Raise(new PlayerActionRequest
         {
             PlayerIndex = playerIndex,
             ActionType = PlayerActionType.PlayCard,
+            Card = instance
+        });*/
+
+        actionBus.RaiseCardClicked(new CardClickedEvent
+        {
+            PlayerIndex = playerIndex,
             Card = instance
         });
     }
