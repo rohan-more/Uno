@@ -36,7 +36,9 @@ public class CardPlayResolver
         var player = players[playerIndex].State;
 
         if (!rules.CanPlayCard(card, gameState, player, out _))
-            return PlayResult.Invalid;
+        {
+            return new PlayResult { Type = PlayResultType.Invalid };
+        }
 
         player.Hand.Remove(card);
         gameState.DiscardPile.Add(card);
@@ -49,25 +51,97 @@ public class CardPlayResolver
             case CardType.WildDrawFour:
                 pendingWildCard = card;
                 pendingWildPlayerIndex = playerIndex;
-                return PlayResult.AwaitingWildColor;
+                return new PlayResult
+                {
+                    Type = PlayResultType.AwaitingWildColor
+                };
 
             case CardType.DrawTwo:
-                ResolveDraw2(playerIndex, def);
-                return PlayResult.Played;
+                return new PlayResult
+                {
+                    Type = PlayResultType.Played,
+                    Turn = ResolveDraw2(playerIndex, def)
+                };
+
+            case CardType.Skip:
+                return new PlayResult
+                {
+                    Type = PlayResultType.Played,
+                    Turn = ResolveSkip(playerIndex, def)
+                };
+
+            case CardType.Reverse:
+                return new PlayResult
+                {
+                    Type = PlayResultType.Played,
+                    Turn = ResolveReverse(playerIndex, def)
+                };
 
             default:
                 ApplyStandardCard(def);
-                return PlayResult.Played;
+                return new PlayResult
+                {
+                    Type = PlayResultType.Played,
+                    Turn = new TurnAdvanceResult
+                    {
+                        NextPlayerIndex = AdvanceIndex(playerIndex)
+                    }
+                };
         }
+
     }
     
-    private void ResolveDraw2(int playerIndex, CardDefinition def)
+    private TurnAdvanceResult ResolveSkip(int playerIndex, CardDefinition def)
     {
         gameState.CurrentColor = def.Color;
         gameState.CurrentType = def.Type;
         gameState.CurrentNumber = -1;
 
-        int targetIndex = GetNextPlayerIndex(playerIndex);
+        // Skip exactly one player
+        return new TurnAdvanceResult
+        {
+            NextPlayerIndex = AdvanceIndex(playerIndex, 2)
+        };
+    }
+    
+    private TurnAdvanceResult ResolveReverse(int playerIndex, CardDefinition def)
+    {
+        gameState.CurrentColor = def.Color;
+        gameState.CurrentType = def.Type;
+        gameState.CurrentNumber = -1;
+
+        // Flip direction
+        gameState.Direction =
+            gameState.Direction == TurnDirection.Clockwise
+                ? TurnDirection.CounterClockwise
+                : TurnDirection.Clockwise;
+
+        // UNO rule: with 2 players, Reverse == Skip
+        if (players.Length == 2)
+        {
+            return new TurnAdvanceResult
+            {
+                NextPlayerIndex = AdvanceIndex(playerIndex, 2)
+            };
+        }
+
+        // Normal reverse: advance once in new direction
+        return new TurnAdvanceResult
+        {
+            NextPlayerIndex = AdvanceIndex(playerIndex)
+        };
+    }
+
+
+
+    
+    private TurnAdvanceResult ResolveDraw2(int playerIndex, CardDefinition def)
+    {
+        gameState.CurrentColor = def.Color;
+        gameState.CurrentType = def.Type;
+        gameState.CurrentNumber = -1;
+
+        int targetIndex = AdvanceIndex(playerIndex);
 
         var drawnCards = DrawCards(targetIndex, 2);
 
@@ -77,24 +151,23 @@ public class CardPlayResolver
             Cards = drawnCards
         });
 
-        SkipNextPlayer();
+        // Skip the target player
+        return new TurnAdvanceResult
+        {
+            NextPlayerIndex = AdvanceIndex(playerIndex, 2)
+        };
     }
-
-    private void SkipNextPlayer()
-    {
-       // currentPlayerIndex = GetNextPlayerIndex(currentPlayerIndex);
-    }
-
+    
 
     /// <summary>
     /// Called AFTER player selects color in popup
     /// </summary>
-    public void ResolveWild(CardColor chosenColor)
+    public TurnAdvanceResult ResolveWild(CardColor chosenColor)
     {
         if (pendingWildCard == null)
         {
             Debug.LogError("ResolveWild called with no pending wild card");
-            return;
+            return new TurnAdvanceResult();
         }
 
         CardDefinition def = pendingWildCard.GetDefinition(database);
@@ -105,17 +178,31 @@ public class CardPlayResolver
 
         if (def.Type == CardType.WildDrawFour)
         {
-            int targetIndex = GetNextPlayerIndex(pendingWildPlayerIndex);
+            int targetIndex = AdvanceIndex(pendingWildPlayerIndex);
+
             var drawnCards = DrawCards(targetIndex, 4);
             actionBus.RaiseCardDraw(new CardDrawEvent
             {
                 PlayerIndex = targetIndex,
                 Cards = drawnCards
             });
+
+            pendingWildCard = null;
+            
+            return new TurnAdvanceResult
+            {
+                NextPlayerIndex = AdvanceIndex(pendingWildPlayerIndex, 2)
+            };
         }
 
         pendingWildCard = null;
+
+        return new TurnAdvanceResult
+        {
+            NextPlayerIndex = AdvanceIndex(pendingWildPlayerIndex)
+        };
     }
+
 
     public void DrawCardForPlayer(int playerIndex)
     {
@@ -131,9 +218,6 @@ public class CardPlayResolver
         gameState.CurrentColor = def.Color;
         gameState.CurrentType = def.Type;
         gameState.CurrentNumber = def.Number;
-
-        // NOTE:
-        // Skip / Reverse / Draw2 go here later
     }
 
     public List<CardInstance> DrawCards(int playerIndex, int count)
@@ -149,24 +233,46 @@ public class CardPlayResolver
 
         return drawn;
     }
-    private void SkipPlayer()
+    
+    private int AdvanceIndex(int current, int step = 1)
     {
-        // Skip handled by controller via turn increment
-        // This is intentionally empty for now
-    }
+        int dir = (int)gameState.Direction; // +1 or -1
+        int count = players.Length;
 
-    private int GetNextPlayerIndex(int current)
-    {
-        return (current + 1) % players.Length;
+        int next = (current + dir * step) % count;
+        if (next < 0)
+            next += count;
+
+        return next;
     }
 }
 
 // -------- SUPPORT TYPES --------
 
-public enum PlayResult
+public struct PlayResult
+{
+    public PlayResultType Type;
+    public TurnAdvanceResult Turn;
+}
+
+public enum PlayResultType
 {
     Invalid,
     Played,
     AwaitingWildColor
+}
+
+public struct TurnAdvanceResult
+{
+    public int NextPlayerIndex;
+    public bool SkipOccurred;
+    public bool DirectionChanged;
+    public int CardsDrawn;
+}
+
+public enum TurnDirection
+{
+    Clockwise = 1,
+    CounterClockwise = -1
 }
 

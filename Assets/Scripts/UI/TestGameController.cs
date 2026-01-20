@@ -172,69 +172,6 @@ public class TestGameController : MonoBehaviour
 
         rulesEngine = new RulesEngine(gameConfig.rules, database);
     }
-    
-    /*void Start()
-    {
-        database.Initialize();
-        
-        gameState = new GameState();
-        playerState = new PlayerState { PlayerId = 0 };
-        rulesEngine = new RulesEngine(gameConfig.rules, database);
-
-        SetupPlayers();
-        StartTurn(0); 
-        var numberCards = new List<CardInstance>();
-        var otherCards = new List<CardInstance>();
-
-        foreach (var def in database.Cards)
-        {
-            var instance = new CardInstance(def.Id);
-
-            if (def.Type == CardType.Number)
-                numberCards.Add(instance);
-            else
-                otherCards.Add(instance);
-        }
-        
-        int startIndex = Random.Range(0, numberCards.Count);
-        CardInstance startCard = numberCards[startIndex];
-        numberCards.RemoveAt(startIndex);
-        
-        var remainingCards = new List<CardInstance>();
-        remainingCards.AddRange(numberCards);
-        remainingCards.AddRange(otherCards);
-
-        var deck = new DeckModel(remainingCards);
-        deck.Shuffle(new System.Random());
-        var startDef = startCard.GetDefinition(database);
-        // 3. Initialize discard pile + game state
-        gameState.DiscardPile.Add(startCard);
-        gameState.CurrentColor = startDef.Color;
-        gameState.CurrentType = startDef.Type;
-        gameState.CurrentNumber = startDef.Number;
-        discardPileView.SetTopCard(startCard, startDef.FrontSprite);
-
-        // 4. Deal remaining cards to player
-        var playerHand = new List<CardInstance>();
-        var botHand = new List<CardInstance>();
-        
-        int playerDeckMax = 7;
-        while (deck.Count > 0 && playerHand.Count < playerDeckMax)
-        {
-            playerHand.Add(deck.Draw());
-            botHand.Add(deck.Draw());
-        }
-        
-        players[0].State.Hand = playerHand;
-        players[1].State.Hand = botHand;
-        
-        // 5. HandView ONLY receives data
-        handView.BuildHand(playerHand);
-        botHandView.BuildHand(botHand);
-        handView.CheckValidCards(rulesEngine, gameState, playerState);
-        
-        resolver = new CardPlayResolver(rulesEngine, gameState, players, database);
-    }*/
 
     private void ChooseWildColor(CardColor color)
     {
@@ -263,15 +200,7 @@ public class TestGameController : MonoBehaviour
             Cards = drawn
         });
     }
-    
-    /*
-    private void SkipNextPlayer()
-    {
-         currentPlayerIndex = GetNextPlayerIndex(currentPlayerIndex);
-    }
-    */
 
-    
     private void HandleCardsDrawn(CardDrawEvent evt)
     {
         if (evt.PlayerIndex == 0)
@@ -361,7 +290,7 @@ public class TestGameController : MonoBehaviour
     {
         var result = resolver.TryPlayCard(currentPlayerIndex, card.Instance);
 
-        if (result == PlayResult.Invalid)
+        if (result.Type == PlayResultType.Invalid)
         {
             Deselect();
             return;
@@ -376,24 +305,23 @@ public class TestGameController : MonoBehaviour
 
             RemoveFromHandView(card);
 
-            if (result == PlayResult.AwaitingWildColor)
+            if (result.Type == PlayResultType.AwaitingWildColor)
             {
-                //ShowWildColorPopup(); // UI only
                 PopupManager.Instance.Show(PopupType.ChooseColor, null, () =>
-                {
-                    Debug.Log("Chosen Color: " + ChosenCardColor);
-                    resolver.ResolveWild(ChosenCardColor);
-                    EndTurn();
-                });
+                    {
+                        var turn = resolver.ResolveWild(ChosenCardColor);
+                        EndTurn(turn);
+                    });
             }
             else
             {
-                EndTurn();
+                EndTurn(result.Turn);
             }
 
             cardProxy.HideImmediate();
         });
     }
+
     
     private void RemoveFromHandView(CardItem card)
     {
@@ -403,31 +331,27 @@ public class TestGameController : MonoBehaviour
             botHandView.RemoveCard(card.Instance);
     }
     
-    private void EndTurn()
+    private void EndTurn(TurnAdvanceResult turn)
     {
-        int nextPlayer = (currentPlayerIndex + 1) % players.Length;
+        currentPlayerIndex = turn.NextPlayerIndex;
 
-        if (nextPlayer == 1)
+        if (players[currentPlayerIndex].DecisionMaker is BotDecisionMaker)
         {
-            // BOT TURN (TEST)
             StartCoroutine(SimulateBotTurn());
         }
         else
         {
-            // BACK TO YOU
-            StartTurn(0);
+            StartTurn(currentPlayerIndex);
         }
     }
+
     
     private IEnumerator SimulateBotTurn()
     {
         Debug.Log("BOT THINKING...");
-        yield return new WaitForSeconds(2f);
+        yield return new WaitForSeconds(1f);
         StartBotTurn(1);
-        // TEST behavior: do nothing / draw / auto-end
         Debug.Log("BOT DONE");
-
-        //StartTurn(0);
     }
     
     private void Deselect()

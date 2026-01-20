@@ -27,8 +27,7 @@ public class GameState
     public CardColor CurrentColor;
     public int CurrentNumber;
     public CardType CurrentType;
-
-    public bool IsClockwise = true;
+    public TurnDirection Direction = TurnDirection.Clockwise;
 
     // Deferred effects
     public int SkipCount = 0;
