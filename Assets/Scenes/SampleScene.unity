@@ -763,6 +763,12 @@ MonoBehaviour:
   database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   cardProxy: {fileID: 493928182}
   gameConfig: {fileID: 11400000, guid: c3570bc389c8bcf41942a60b3695e9ca, type: 2}
+  ChosenCardColor: 0
+  useTestHand: 1
+  testHandSize: 7
+  testCardIds:
+  - WILD_DRAW_FOUR
+  - RED_DRAW_TWO
 --- !u!114 &771139320
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1460,7 +1466,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_RaycastTarget: 1
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
