@@ -243,16 +243,6 @@ MonoBehaviour:
     AccentColor: {r: 0, g: 0, b: 1, a: 1}
     IsWild: 0
     DrawAmount: 0
-  - Id: RED_DRAW_TWO
-    Color: 0
-    Type: 3
-    Number: 0
-    FrontSprite: {fileID: 21300000, guid: f07eb81bad1772b46972bc54ee132511, type: 3}
-    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
-    DisplayName: Red Draw Two
-    AccentColor: {r: 1, g: 0, b: 0, a: 1}
-    IsWild: 0
-    DrawAmount: 2
   - Id: WILD
     Color: 4
     Type: 4
@@ -263,6 +253,36 @@ MonoBehaviour:
     AccentColor: {r: 1, g: 1, b: 1, a: 1}
     IsWild: 1
     DrawAmount: 0
+  - Id: RED_DRAW_TWO
+    Color: 0
+    Type: 3
+    Number: 0
+    FrontSprite: {fileID: 21300000, guid: f07eb81bad1772b46972bc54ee132511, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red Draw Two
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 2
+  - Id: RED_DRAW_TWO
+    Color: 0
+    Type: 3
+    Number: 0
+    FrontSprite: {fileID: 21300000, guid: f07eb81bad1772b46972bc54ee132511, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Red Draw Two
+    AccentColor: {r: 1, g: 0, b: 0, a: 1}
+    IsWild: 0
+    DrawAmount: 2
+  - Id: WILD_DRAW_FOUR
+    Color: 4
+    Type: 5
+    Number: 0
+    FrontSprite: {fileID: 21300000, guid: b10b03480432aa749af8c1e8c381024b, type: 3}
+    BackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
+    DisplayName: Wild
+    AccentColor: {r: 1, g: 1, b: 1, a: 1}
+    IsWild: 1
+    DrawAmount: 4
   - Id: WILD_DRAW_FOUR
     Color: 4
     Type: 5

@@ -767,7 +767,8 @@ MonoBehaviour:
   useTestHand: 1
   testHandSize: 7
   testCardIds:
-  - WILD_DRAW_FOUR
+  - BLUE_REVERSE
+  - RED_SKIP
   - RED_DRAW_TWO
 --- !u!114 &771139320
 MonoBehaviour:

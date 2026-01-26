@@ -32,6 +32,7 @@ public class GameState
     // Deferred effects
     public int SkipCount = 0;
     public int PendingDrawCount = 0;
+    public CardType PendingDrawType;
     public bool RequiresColorChoice = false;
 
     public DiscardPileModel DiscardPile = new();

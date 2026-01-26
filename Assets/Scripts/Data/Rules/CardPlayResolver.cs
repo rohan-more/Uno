@@ -34,16 +34,23 @@ public class CardPlayResolver
     public PlayResult TryPlayCard(int playerIndex, CardInstance card)
     {
         var player = players[playerIndex].State;
-
-        if (!rules.CanPlayCard(card, gameState, player, out _))
-        {
-            return new PlayResult { Type = PlayResultType.Invalid };
-        }
-
-        player.Hand.Remove(card);
-        gameState.DiscardPile.Add(card);
-
         var def = card.GetDefinition(database);
+
+        // 1️⃣ STACKING GATE (FIRST)
+        if (gameState.PendingDrawCount > 0)
+        {
+            bool canStack =
+                (gameState.PendingDrawType == CardType.DrawTwo && def.Type == CardType.DrawTwo) ||
+                (gameState.PendingDrawType == CardType.WildDrawFour && def.Type == CardType.WildDrawFour);
+
+            if (!canStack)
+            {
+                return new PlayResult
+                {
+                    Type = PlayResultType.Invalid
+                };
+            }
+        }
 
         switch (def.Type)
         {
@@ -131,9 +138,6 @@ public class CardPlayResolver
             NextPlayerIndex = AdvanceIndex(playerIndex)
         };
     }
-
-
-
     
     private TurnAdvanceResult ResolveDraw2(int playerIndex, CardDefinition def)
     {
@@ -141,23 +145,17 @@ public class CardPlayResolver
         gameState.CurrentType = def.Type;
         gameState.CurrentNumber = -1;
 
-        int targetIndex = AdvanceIndex(playerIndex);
+        gameState.PendingDrawCount += 2;
+        gameState.PendingDrawType = CardType.DrawTwo;
 
-        var drawnCards = DrawCards(targetIndex, 2);
-
-        actionBus.RaiseCardDraw(new CardDrawEvent
-        {
-            PlayerIndex = targetIndex,
-            Cards = drawnCards
-        });
-
-        // Skip the target player
+        // Move to next player, they must stack or draw
         return new TurnAdvanceResult
         {
-            NextPlayerIndex = AdvanceIndex(playerIndex, 2)
+            NextPlayerIndex = AdvanceIndex(playerIndex)
         };
     }
-    
+
+
 
     /// <summary>
     /// Called AFTER player selects color in popup
@@ -178,20 +176,14 @@ public class CardPlayResolver
 
         if (def.Type == CardType.WildDrawFour)
         {
-            int targetIndex = AdvanceIndex(pendingWildPlayerIndex);
-
-            var drawnCards = DrawCards(targetIndex, 4);
-            actionBus.RaiseCardDraw(new CardDrawEvent
-            {
-                PlayerIndex = targetIndex,
-                Cards = drawnCards
-            });
+            gameState.PendingDrawCount += 4;
+            gameState.PendingDrawType = CardType.WildDrawFour;
 
             pendingWildCard = null;
-            
+
             return new TurnAdvanceResult
             {
-                NextPlayerIndex = AdvanceIndex(pendingWildPlayerIndex, 2)
+                NextPlayerIndex = AdvanceIndex(pendingWildPlayerIndex)
             };
         }
 
@@ -203,6 +195,27 @@ public class CardPlayResolver
         };
     }
 
+    public TurnAdvanceResult ResolvePendingDraw(int playerIndex)
+    {
+        int count = gameState.PendingDrawCount;
+
+        gameState.PendingDrawCount = 0;
+        gameState.PendingDrawType = CardType.Number;
+
+        var drawn = DrawCards(playerIndex, count);
+
+        actionBus.RaiseCardDraw(new CardDrawEvent
+        {
+            PlayerIndex = playerIndex,
+            Cards = drawn
+        });
+
+        // Player loses turn after drawing
+        return new TurnAdvanceResult
+        {
+            NextPlayerIndex = AdvanceIndex(playerIndex)
+        };
+    }
 
     public void DrawCardForPlayer(int playerIndex)
     {
@@ -234,6 +247,28 @@ public class CardPlayResolver
         return drawn;
     }
     
+    public bool HasValidStackCard(PlayerState player)
+    {
+        if (gameState.PendingDrawCount == 0)
+            return false;
+
+        foreach (var card in player.Hand)
+        {
+            var def = card.GetDefinition(database);
+
+            if (gameState.PendingDrawType == CardType.DrawTwo &&
+                def.Type == CardType.DrawTwo)
+                return true;
+
+            if (gameState.PendingDrawType == CardType.WildDrawFour &&
+                def.Type == CardType.WildDrawFour)
+                return true;
+        }
+
+        return false;
+    }
+
+    
     private int AdvanceIndex(int current, int step = 1)
     {
         int dir = (int)gameState.Direction; // +1 or -1
@@ -260,6 +295,15 @@ public enum PlayResultType
     Invalid,
     Played,
     AwaitingWildColor
+}
+
+public enum TurnPhase
+{
+    AwaitingAction,      // Player can click cards / draw
+    AwaitingWildColor,   // Popup open
+    ResolvingDraw,       // Cards being drawn / animated
+    BotThinking,         // Bot delay
+    Animating            // Card proxy moving
 }
 
 public struct TurnAdvanceResult
