@@ -248,8 +248,7 @@ public class TestGameController : MonoBehaviour
             turnPhase = TurnPhase.AwaitingAction;
         }
    
-        players[playerIndex].DecisionMaker.RequestAction(
-            player,
+        players[playerIndex].DecisionMaker.RequestAction(player,
             gameState,
             rulesEngine,
             database,
@@ -277,12 +276,12 @@ public class TestGameController : MonoBehaviour
 
     private void TryPlayCard(PlayerActionRequest request)
     {
-        CardItem card = currentPlayerIndex == 0
-            ? handView.GetCardItem(request.Card)
-            : botHandView.GetCardItem(request.Card);
+        CardItem card = currentPlayerIndex == 0 ? handView.GetCardItem(request.Card) : botHandView.GetCardItem(request.Card);
 
         if (card == null)
+        {
             return;
+        }
 
         if (selectedCard == null)
         {
@@ -319,7 +318,7 @@ public class TestGameController : MonoBehaviour
 
         turnPhase = TurnPhase.Animating;
         PlayerSeat seat = currentPlayerIndex == 0 ? PlayerSeat.BottomPlayer : PlayerSeat.TopPlayer;
-
+        Debug.Log("Card Played: " + card.Instance.CardId);
         cardProxy.Show(card.Sprite, seat);
         cardProxy.MoveTo(() =>
         {
