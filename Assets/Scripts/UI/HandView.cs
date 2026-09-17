@@ -21,10 +21,12 @@ public class HandView : MonoBehaviour
     private List<RectTransform> cardTransforms = new();
     public CardItem GetCardItem(CardInstance instance)
     {
-        for (int i = 0; i < items.Count; i++)
+        foreach (var t in items)
         {
-            if (items[i].Instance.Equals(instance))
-                return items[i];
+            if (t.Instance.Equals(instance))
+            {
+                return t;
+            }
         }
 
         Debug.LogError($"CardItem not found for {instance.CardId}");

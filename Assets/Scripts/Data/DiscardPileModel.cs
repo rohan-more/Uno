@@ -27,12 +27,12 @@ public class GameState
     public CardColor CurrentColor;
     public int CurrentNumber;
     public CardType CurrentType;
-
-    public bool IsClockwise = true;
+    public TurnDirection Direction = TurnDirection.Clockwise;
 
     // Deferred effects
     public int SkipCount = 0;
     public int PendingDrawCount = 0;
+    public CardType PendingDrawType;
     public bool RequiresColorChoice = false;
 
     public DiscardPileModel DiscardPile = new();

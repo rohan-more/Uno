@@ -14,22 +14,39 @@ public class RulesEngine
     }
 
     // ----- VALIDATION -----
-    public bool CanPlayCard(CardInstance card, GameState state, PlayerState player, out RuleDefinitionSO matchedRule)
+    public bool CanPlayCard(CardInstance card, GameState gameState, PlayerState player, out string reason)
     {
-        foreach (var rule in rules)
-        {
-            if (rule.trigger != RuleTrigger.OnValidatePlay)
-                continue;
+        var def = card.GetDefinition(cardDatabase);
 
-            if (Matches(rule.match, card, state, player))
-            {
-                //Debug.Log($"VALID via rule: {rule.name}");
-                matchedRule = rule;
-                return true;
-            }
+        // Wilds are always playable
+        if (def.Type == CardType.Wild || def.Type == CardType.WildDrawFour)
+        {
+            reason = null;
+            return true;
         }
 
-        matchedRule = null;
+        // Color match ALWAYS works
+        if (def.Color == gameState.CurrentColor)
+        {
+            reason = null;
+            return true;
+        }
+
+        // Number match (numbers only)
+        if (def.Type == CardType.Number && gameState.CurrentType == CardType.Number && def.Number == gameState.CurrentNumber)
+        {
+            reason = null;
+            return true;
+        }
+
+        // Symbol match (Reverse / Skip / Draw2)
+        if (def.Type == gameState.CurrentType && def.Type != CardType.Number)
+        {
+            reason = null;
+            return true;
+        }
+
+        reason = "No color, number, or symbol match";
         return false;
     }
 
@@ -93,11 +110,7 @@ public class RulesEngine
                 case RuleEffectType.SkipNextPlayer:
                     state.SkipCount += effect.amount;
                     break;
-
-                case RuleEffectType.ReverseTurnOrder:
-                    state.IsClockwise = !state.IsClockwise;
-                    break;
-
+                
                 case RuleEffectType.DrawCards:
                     state.PendingDrawCount += effect.amount;
                     break;

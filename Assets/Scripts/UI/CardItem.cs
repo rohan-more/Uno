@@ -43,7 +43,6 @@ public class CardItem : MonoBehaviour
         cardOutline.enabled = value;
         IsEligible = value;
     }
-
     
     void OnEnable()
     {
@@ -57,13 +56,6 @@ public class CardItem : MonoBehaviour
 
     private void OnClicked()
     {
-        /*actionBus.Raise(new PlayerActionRequest
-        {
-            PlayerIndex = playerIndex,
-            ActionType = PlayerActionType.PlayCard,
-            Card = instance
-        });*/
-
         actionBus.RaiseCardClicked(new CardClickedEvent
         {
             PlayerIndex = playerIndex,
