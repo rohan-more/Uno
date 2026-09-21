@@ -1,0 +1,15 @@
+name: uno-local
+
+logger:
+  level: DEBUG
+
+session:
+  token_expiry_sec: 7200
+
+socket:
+  max_message_size_bytes: 16384
+
+# Local development only. Change these before deploying anywhere.
+console:
+  username: admin
+  password: password
