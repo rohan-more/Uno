@@ -11,9 +11,7 @@ type ActionType string
 const (
 	PlayCard ActionType = "PLAY_CARD"
 	DrawCard ActionType = "DRAW_CARD"
-	Pass     ActionType = "PASS"      // only after drawing a playable card
-	CallUno  ActionType = "CALL_UNO"  // with 1 card, or 2 cards on your own turn
-	CatchUno ActionType = "CATCH_UNO" // catch the player in UnoTarget
+	Pass     ActionType = "PASS" // only after drawing a playable card
 )
 
 // Action is one request from a seat. CardID and Color are only used by PlayCard;
@@ -32,8 +30,7 @@ const (
 	EvCardsDrawn       EventType = "CARDS_DRAWN"
 	EvDirectionChanged EventType = "DIRECTION_CHANGED"
 	EvTurnChanged      EventType = "TURN_CHANGED"
-	EvUnoCalled        EventType = "UNO_CALLED"
-	EvUnoCaught        EventType = "UNO_CAUGHT"
+	EvPlayerFinished   EventType = "PLAYER_FINISHED"
 	EvGameOver         EventType = "GAME_OVER"
 )
 
@@ -41,12 +38,13 @@ const (
 // type are left zero. EvCardsDrawn lists the actual cards; the server must
 // only send them to the drawing player and send a count to everyone else.
 type Event struct {
-	Type  EventType
-	Seat  int    // who it happened to (the player, the new current seat, the winner...)
-	By    int    // EvUnoCaught: who caught them
-	Card  Card   // EvCardPlayed
-	Cards []Card // EvCardsDrawn
-	Color Color  // EvCardPlayed: the active color after the play
+	Type    EventType
+	Seat    int    // who it happened to (the player, the new current seat...)
+	Card    Card   // EvCardPlayed
+	Cards   []Card // EvCardsDrawn
+	Color   Color  // EvCardPlayed: the active color after the play
+	Place   int    // EvPlayerFinished: 1 = first to finish
+	Ranking []int  // EvGameOver: seats in finishing order
 }
 
 var (
@@ -59,8 +57,6 @@ var (
 	ErrMustPlayDrawnCard = errors.New("after drawing you may only play the drawn card or pass")
 	ErrAlreadyDrew       = errors.New("already drew this turn")
 	ErrCannotPass        = errors.New("can only pass after drawing a playable card")
-	ErrCannotCallUno     = errors.New("can only call UNO with 1 card, or 2 cards on your turn")
-	ErrNothingToCatch    = errors.New("nobody to catch")
 	ErrUnknownAction     = errors.New("unknown action")
 )
 
@@ -74,6 +70,9 @@ func (s *GameState) Apply(seat int, a Action) ([]Event, error) {
 	if seat < 0 || seat >= len(s.Players) {
 		return nil, fmt.Errorf("%w: %d", ErrBadSeat, seat)
 	}
+	if seat != s.Current {
+		return nil, ErrNotYourTurn // finished players are never Current
+	}
 
 	switch a.Type {
 	case PlayCard:
@@ -81,11 +80,7 @@ func (s *GameState) Apply(seat int, a Action) ([]Event, error) {
 	case DrawCard:
 		return s.drawCard(seat)
 	case Pass:
-		return s.pass(seat)
-	case CallUno:
-		return s.callUno(seat)
-	case CatchUno:
-		return s.catchUno(seat)
+		return s.pass()
 	}
 	return nil, fmt.Errorf("%w: %q", ErrUnknownAction, a.Type)
 }
@@ -132,9 +127,6 @@ func (s *GameState) PlayableCards(seat int) []Card {
 
 func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	// ---- checks ----
-	if seat != s.Current {
-		return nil, ErrNotYourTurn
-	}
 	hand := s.Players[seat].Hand
 	idx := -1
 	for i, c := range hand {
@@ -159,7 +151,6 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	}
 
 	// ---- changes ----
-	s.UnoTarget = NoSeat // any Play/Draw/Pass closes the catch window
 	s.DrawnCard = nil
 
 	// Remove from hand, keeping the order of the rest.
@@ -172,13 +163,17 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	}
 	events := []Event{{Type: EvCardPlayed, Seat: seat, Card: card, Color: s.ActiveColor}}
 
-	left := len(s.Players[seat].Hand)
-	if left == 0 {
-		s.Winner = seat
-		return append(events, Event{Type: EvGameOver, Seat: seat}), nil
-	}
-	if left == 1 && !s.Players[seat].CalledUno {
-		s.UnoTarget = seat
+	if len(s.Players[seat].Hand) == 0 {
+		events = append(events, s.finish(seat))
+		if s.inGameCount() == 1 {
+			for last := range s.Players {
+				if s.InGame(last) {
+					events = append(events, s.finish(last))
+				}
+			}
+			return append(events, Event{Type: EvGameOver, Ranking: append([]int(nil), s.Ranking...)}), nil
+		}
+		// Otherwise the game goes on, and the card's effect below still applies.
 	}
 
 	step := 1
@@ -188,8 +183,11 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	case Reverse:
 		s.Direction = -s.Direction
 		events = append(events, Event{Type: EvDirectionChanged, Seat: seat})
-		if len(s.Players) == 2 {
-			step = 2 // with two players Reverse acts as Skip
+		// With two players left, Reverse acts as Skip: the same player goes
+		// again. If the player who reversed just finished, there's nobody to
+		// "go again", so play simply continues in the new direction.
+		if s.inGameCount() == 2 && s.InGame(seat) {
+			step = 2
 		}
 	case DrawTwo:
 		s.PendingDraw += 2
@@ -200,14 +198,9 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 }
 
 func (s *GameState) drawCard(seat int) ([]Event, error) {
-	if seat != s.Current {
-		return nil, ErrNotYourTurn
-	}
 	if s.DrawnCard != nil {
 		return nil, ErrAlreadyDrew
 	}
-
-	s.UnoTarget = NoSeat
 
 	// Owing cards from a Draw Two / Wild Draw Four: take them all, lose the turn.
 	if s.PendingDraw > 0 {
@@ -233,43 +226,21 @@ func (s *GameState) drawCard(seat int) ([]Event, error) {
 	return append(events, s.advance(1)), nil
 }
 
-func (s *GameState) pass(seat int) ([]Event, error) {
-	if seat != s.Current {
-		return nil, ErrNotYourTurn
-	}
+func (s *GameState) pass() ([]Event, error) {
 	if s.DrawnCard == nil {
 		return nil, ErrCannotPass
 	}
-	s.UnoTarget = NoSeat
 	return []Event{s.advance(1)}, nil
 }
 
-func (s *GameState) callUno(seat int) ([]Event, error) {
-	n := len(s.Players[seat].Hand)
-	if n != 1 && !(n == 2 && seat == s.Current) {
-		return nil, ErrCannotCallUno
-	}
-	s.Players[seat].CalledUno = true
-	if s.UnoTarget == seat {
-		s.UnoTarget = NoSeat
-	}
-	return []Event{{Type: EvUnoCalled, Seat: seat}}, nil
+// finish gives seat the next finishing place.
+func (s *GameState) finish(seat int) Event {
+	s.Ranking = append(s.Ranking, seat)
+	s.Players[seat].Place = len(s.Ranking)
+	return Event{Type: EvPlayerFinished, Seat: seat, Place: s.Players[seat].Place}
 }
 
-func (s *GameState) catchUno(seat int) ([]Event, error) {
-	target := s.UnoTarget
-	if target == NoSeat || target == seat {
-		return nil, ErrNothingToCatch
-	}
-	s.UnoTarget = NoSeat
-	drawn := s.drawCards(target, 2)
-	return []Event{
-		{Type: EvUnoCaught, Seat: target, By: seat},
-		{Type: EvCardsDrawn, Seat: target, Cards: drawn},
-	}, nil
-}
-
-// advance ends the current turn, moving step seats in the current direction.
+// advance ends the current turn, moving step players in the current direction.
 func (s *GameState) advance(step int) Event {
 	s.DrawnCard = nil
 	s.Current = s.nextSeat(s.Current, step)

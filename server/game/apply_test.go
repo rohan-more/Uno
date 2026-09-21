@@ -32,8 +32,6 @@ func rig(t *testing.T, tb table) *GameState {
 		rng:       seededRNG(1),
 		Deck:      &Deck{},
 		Direction: 1,
-		UnoTarget: NoSeat,
-		Winner:    NoSeat,
 	}
 	for _, hand := range tb.hands {
 		p := Player{}
@@ -308,100 +306,124 @@ func TestDraw_PlayableThenPass(t *testing.T) {
 	}
 }
 
-func TestWin(t *testing.T) {
-	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_SKIP"}, {"RED_2"}}})
-	s.Players[0].CalledUno = true
+func TestFinish_GameContinues(t *testing.T) {
+	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1"}, {"RED_2", "RED_3"}, {"RED_4", "RED_6"}}})
 
-	ev := play(t, s, 0, "RED_SKIP", "")
+	ev := play(t, s, 0, "RED_1", "")
 
-	if !s.Over() || s.Winner != 0 {
-		t.Fatalf("winner = %d, want 0", s.Winner)
+	if s.Over() || s.Players[0].Place != 1 || len(s.Ranking) != 1 || s.Current != 1 {
+		t.Fatalf("over %v place %d ranking %v current %d; want game on, seat 0 first, seat 1 next",
+			s.Over(), s.Players[0].Place, s.Ranking, s.Current)
 	}
-	if got := eventTypes(ev); got[len(got)-1] != EvGameOver {
-		t.Errorf("events = %v, want GAME_OVER last", got)
+	if got := eventTypes(ev); len(got) != 3 || got[1] != EvPlayerFinished || ev[1].Place != 1 {
+		t.Errorf("events = %+v", ev)
+	}
+
+	// Seat 0 is now skipped: 1 -> 2 -> 1.
+	play(t, s, 1, "RED_2", "")
+	if s.Current != 2 {
+		t.Errorf("current = %d, want 2", s.Current)
+	}
+	play(t, s, 2, "RED_4", "")
+	if s.Current != 1 {
+		t.Errorf("current = %d, want 1 (seat 0 has finished)", s.Current)
+	}
+	_, err := s.Apply(0, Action{Type: DrawCard})
+	wantErr(t, err, ErrNotYourTurn)
+}
+
+func TestFinish_LastTwoEndsGame(t *testing.T) {
+	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1"}, {"RED_2", "RED_3"}}})
+
+	ev := play(t, s, 0, "RED_1", "")
+
+	if !s.Over() {
+		t.Fatal("game should be over with one player left")
+	}
+	if len(s.Ranking) != 2 || s.Ranking[0] != 0 || s.Ranking[1] != 1 || s.Players[1].Place != 2 {
+		t.Errorf("ranking %v, places %d/%d; want [0 1]", s.Ranking, s.Players[0].Place, s.Players[1].Place)
+	}
+	want := []EventType{EvCardPlayed, EvPlayerFinished, EvPlayerFinished, EvGameOver}
+	got := eventTypes(ev)
+	if len(got) != len(want) {
+		t.Fatalf("events = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("events = %v, want %v", got, want)
+		}
+	}
+	if r := ev[3].Ranking; len(r) != 2 || r[0] != 0 || r[1] != 1 {
+		t.Errorf("GAME_OVER ranking = %v, want [0 1]", r)
 	}
 	_, err := s.Apply(1, Action{Type: DrawCard})
 	wantErr(t, err, ErrGameOver)
 }
 
-func TestUno_ForgotAndCaught(t *testing.T) {
-	s := rig(t, table{
-		top:   "RED_5",
-		hands: [][]string{{"RED_1", "RED_2"}, {"BLUE_3"}, {"GREEN_4"}},
-		deck:  []string{"YELLOW_1", "YELLOW_2"},
-	})
-	play(t, s, 0, "RED_1", "")
-	if s.UnoTarget != 0 {
-		t.Fatalf("UnoTarget = %d, want 0", s.UnoTarget)
-	}
-
-	_, err := s.Apply(0, Action{Type: CatchUno})
-	wantErr(t, err, ErrNothingToCatch) // can't catch yourself
-
-	ev := do(t, s, 2, CatchUno) // anyone can catch, not just the next player
-	if len(s.Players[0].Hand) != 3 || s.UnoTarget != NoSeat {
-		t.Errorf("hand %d target %d, want 3 and none", len(s.Players[0].Hand), s.UnoTarget)
-	}
-	if ev[0].Type != EvUnoCaught || ev[0].Seat != 0 || ev[0].By != 2 {
-		t.Errorf("events = %+v", ev)
-	}
-	if s.Current != 1 {
-		t.Errorf("catching changed the turn: current %d", s.Current)
-	}
-}
-
-func TestUno_CallAfterPlaying(t *testing.T) {
-	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1", "RED_2"}, {"BLUE_3"}}})
-	play(t, s, 0, "RED_1", "")
-	do(t, s, 0, CallUno) // called in time, before anyone caught them
-	_, err := s.Apply(1, Action{Type: CatchUno})
-	wantErr(t, err, ErrNothingToCatch)
-}
-
-func TestUno_CallBeforePlaying(t *testing.T) {
-	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1", "RED_2"}, {"BLUE_3"}}})
-	do(t, s, 0, CallUno) // 2 cards, own turn
-	play(t, s, 0, "RED_1", "")
-	if s.UnoTarget != NoSeat {
-		t.Errorf("UnoTarget = %d after calling first, want none", s.UnoTarget)
-	}
-}
-
-func TestUno_WindowClosesOnNextAction(t *testing.T) {
-	t.Run("next player draws", func(t *testing.T) {
+func TestFinish_LastCardEffectStillApplies(t *testing.T) {
+	t.Run("draw two", func(t *testing.T) {
 		s := rig(t, table{
 			top:   "RED_5",
-			hands: [][]string{{"RED_1", "RED_2"}, {"BLUE_3"}},
-			deck:  []string{"GREEN_9"},
+			hands: [][]string{{"RED_DRAW_TWO"}, {"BLUE_1", "BLUE_2"}, {"GREEN_3", "GREEN_4"}},
+			deck:  []string{"YELLOW_1", "YELLOW_2"},
 		})
-		play(t, s, 0, "RED_1", "")
-		do(t, s, 1, DrawCard) // seat 1 moves on without catching
-		_, err := s.Apply(1, Action{Type: CatchUno})
-		wantErr(t, err, ErrNothingToCatch)
+		play(t, s, 0, "RED_DRAW_TWO", "")
+		if s.PendingDraw != 2 || s.Current != 1 {
+			t.Fatalf("pending %d current %d, want 2 and 1", s.PendingDraw, s.Current)
+		}
+		do(t, s, 1, DrawCard)
+		if len(s.Players[1].Hand) != 4 || s.Current != 2 {
+			t.Errorf("hand %d current %d, want 4 and 2", len(s.Players[1].Hand), s.Current)
+		}
 	})
-	t.Run("next player plays", func(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_SKIP"}, {"RED_1", "RED_2"}, {"RED_3", "RED_4"}}})
+		play(t, s, 0, "RED_SKIP", "")
+		if s.Current != 2 {
+			t.Errorf("current = %d, want 2 (seat 1 skipped)", s.Current)
+		}
+	})
+	t.Run("reverse by the finisher", func(t *testing.T) {
+		// Three players; seat 1 finishes on a Reverse, leaving two. Play just
+		// continues in the new direction: 1 -> 0.
 		s := rig(t, table{
-			top: "RED_5",
-			// Seat 1 keeps 2 cards after playing, so it isn't catchable itself.
-			hands: [][]string{{"RED_1", "RED_2"}, {"RED_3", "BLUE_4", "BLUE_6"}, {"GREEN_4"}},
+			top:   "RED_5",
+			hands: [][]string{{"RED_1", "RED_2"}, {"RED_REVERSE"}, {"RED_3", "RED_4"}},
 		})
-		play(t, s, 0, "RED_1", "")
-		play(t, s, 1, "RED_3", "")
-		_, err := s.Apply(2, Action{Type: CatchUno})
-		wantErr(t, err, ErrNothingToCatch)
+		s.Current = 1
+		play(t, s, 1, "RED_REVERSE", "")
+		if s.Direction != -1 || s.Current != 0 {
+			t.Errorf("direction %d current %d, want -1 and 0", s.Direction, s.Current)
+		}
+	})
+	t.Run("wild draw four", func(t *testing.T) {
+		s := rig(t, table{top: "RED_5", hands: [][]string{{"WILD_DRAW_FOUR"}, {"BLUE_1", "BLUE_2"}, {"GREEN_3", "GREEN_4"}}})
+		play(t, s, 0, "WILD_DRAW_FOUR", Green)
+		if s.PendingDraw != 4 || s.ActiveColor != Green || s.Current != 1 {
+			t.Errorf("pending %d color %s current %d, want 4 GREEN 1", s.PendingDraw, s.ActiveColor, s.Current)
+		}
 	})
 }
 
-func TestUno_CannotCallWithManyCards(t *testing.T) {
-	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1", "RED_2", "RED_3"}, {"BLUE_3", "BLUE_4"}}})
-	_, err := s.Apply(0, Action{Type: CallUno})
-	wantErr(t, err, ErrCannotCallUno)
-	_, err = s.Apply(1, Action{Type: CallUno}) // 2 cards but not their turn
-	wantErr(t, err, ErrCannotCallUno)
+func TestReverse_TwoLeftOfFourActsAsSkip(t *testing.T) {
+	s := rig(t, table{
+		top:   "RED_5",
+		hands: [][]string{{}, {"RED_REVERSE", "RED_1"}, {}, {"RED_2", "RED_3"}},
+	})
+	s.finish(0)
+	s.finish(2)
+	s.Current = 1
+
+	play(t, s, 1, "RED_REVERSE", "")
+
+	if s.Current != 1 {
+		t.Errorf("current = %d, want 1 (two players left, Reverse acts as Skip)", s.Current)
+	}
 }
 
 // TestRandomGames plays many full games with random legal moves and checks
-// that no card is ever lost or duplicated and every game finishes.
+// that no card is ever lost or duplicated, every game finishes, and everyone
+// ends up with a place.
 func TestRandomGames(t *testing.T) {
 	cat := loadTestCatalog(t)
 	colors := []Color{Red, Yellow, Green, Blue}
@@ -415,15 +437,12 @@ func TestRandomGames(t *testing.T) {
 		rng := seededRNG(seed + 1000)
 
 		for step := 0; !s.Over(); step++ {
-			if step > 5000 {
-				t.Fatalf("seed %d: game didn't finish in 5000 actions", seed)
+			if step > 10000 {
+				t.Fatalf("seed %d: game didn't finish in 10000 actions", seed)
 			}
 			seat := s.Current
-			if len(s.Players[seat].Hand) <= 2 && rng.IntN(2) == 0 {
-				s.Apply(seat, Action{Type: CallUno}) // sometimes remember UNO
-			}
-			if s.UnoTarget != NoSeat && rng.IntN(2) == 0 {
-				s.Apply(s.nextSeat(s.UnoTarget, 1), Action{Type: CatchUno}) // sometimes catch
+			if !s.InGame(seat) {
+				t.Fatalf("seed %d step %d: finished seat %d has the turn", seed, step, seat)
 			}
 
 			var a Action
@@ -442,6 +461,14 @@ func TestRandomGames(t *testing.T) {
 			if t.Failed() {
 				t.Fatalf("seed %d step %d: cards lost or duplicated", seed, step)
 			}
+		}
+
+		seen := map[int]bool{}
+		for i, seat := range s.Ranking {
+			if seen[seat] || s.Players[seat].Place != i+1 {
+				t.Fatalf("seed %d: bad ranking %v", seed, s.Ranking)
+			}
+			seen[seat] = true
 		}
 	}
 }

@@ -10,9 +10,6 @@ const (
 	MinPlayers = 2
 	MaxPlayers = 4
 	HandSize   = 7
-
-	// NoSeat marks "nobody" in seat fields such as Winner and UnoTarget.
-	NoSeat = -1
 )
 
 // ErrPlayerCount is a "sentinel error": a fixed error value callers can test
@@ -26,10 +23,9 @@ type Player struct {
 	ID   string
 	Hand []Card
 
-	// CalledUno is true once the player has called UNO for their current
-	// one-card hand (or pre-called it on their turn with two cards). Drawing
-	// any card clears it.
-	CalledUno bool
+	// Place is 0 while the player is still in the game, then their finishing
+	// position: 1 for the first to empty their hand, 2 for the next, and so on.
+	Place int
 }
 
 // GameState is everything needed to continue a game, and nothing that can be
@@ -52,11 +48,10 @@ type GameState struct {
 	// Their only legal moves are then to play that card or Pass.
 	DrawnCard *Card
 
-	// UnoTarget is the seat that went down to one card without calling UNO.
-	// Any other player may catch them until the next Play/Draw/Pass.
-	UnoTarget int
-
-	Winner int // NoSeat until someone empties their hand
+	// Ranking lists seats in finishing order. Players who empty their hand are
+	// added as they finish; the game ends when one player is left, and they
+	// are added last.
+	Ranking []int
 }
 
 // NewGame shuffles, deals HandSize cards to each player and turns over a
@@ -73,8 +68,6 @@ func NewGame(cat *Catalog, playerIDs []string, seed uint64) (*GameState, error) 
 		Deck:      NewDeck(cat),
 		Current:   0,
 		Direction: 1,
-		UnoTarget: NoSeat,
-		Winner:    NoSeat,
 	}
 	s.Deck.Shuffle(s.rng)
 
@@ -117,9 +110,25 @@ func (s *GameState) pickStartCard() error {
 	return nil
 }
 
-// Over reports whether someone has won.
+// Over reports whether the game has ended: everyone has a place.
 func (s *GameState) Over() bool {
-	return s.Winner != NoSeat
+	return len(s.Ranking) == len(s.Players)
+}
+
+// InGame reports whether seat hasn't finished yet.
+func (s *GameState) InGame(seat int) bool {
+	return s.Players[seat].Place == 0
+}
+
+// inGameCount returns how many players haven't finished.
+func (s *GameState) inGameCount() int {
+	n := 0
+	for seat := range s.Players {
+		if s.InGame(seat) {
+			n++
+		}
+	}
+	return n
 }
 
 // TopCard returns the card on top of the discard pile.
@@ -134,12 +143,23 @@ func (s *GameState) TopDef() CardDef {
 	return def
 }
 
-// nextSeat returns the seat `step` places away from `from` in the current
-// direction, wrapping around the table. step 1 = next player, step 2 = skip one.
+// nextSeat returns the seat `step` players away from `from` in the current
+// direction, wrapping around the table and skipping finished players.
+// step 1 = next player, step 2 = skip one. `from` may itself be finished.
 func (s *GameState) nextSeat(from, step int) int {
+	if s.inGameCount() == 0 {
+		return from // nobody to move to; avoids looping forever
+	}
 	n := len(s.Players)
-	// % keeps the sign of the left side in Go (-1 % 4 == -1), so add n back.
-	return ((from+s.Direction*step)%n + n) % n
+	seat := from
+	for moved := 0; moved < step; {
+		// % keeps the sign of the left side in Go (-1 % 4 == -1), so add n back.
+		seat = ((seat+s.Direction)%n + n) % n
+		if s.InGame(seat) {
+			moved++
+		}
+	}
+	return seat
 }
 
 // drawCards moves up to n cards from the deck into a player's hand and returns
@@ -163,7 +183,6 @@ func (s *GameState) drawCards(seat, n int) []Card {
 		// Index into s.Players: `p := s.Players[seat]` would be a copy, and
 		// changes to p.Hand wouldn't reach the real player.
 		s.Players[seat].Hand = append(s.Players[seat].Hand, drawn...)
-		s.Players[seat].CalledUno = false
 	}
 	return drawn
 }

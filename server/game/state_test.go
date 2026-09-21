@@ -45,9 +45,9 @@ func TestNewGame(t *testing.T) {
 		if top := s.TopDef(); top.Type != Number || s.ActiveColor != top.Color {
 			t.Errorf("%d players: top %s, active color %s; want a Number card and its color", n, top.ID, s.ActiveColor)
 		}
-		if s.Current != 0 || s.Direction != 1 || s.PendingDraw != 0 || s.Over() || s.UnoTarget != NoSeat {
-			t.Errorf("%d players: bad start state: current %d, direction %d, pending %d, winner %d, uno target %d",
-				n, s.Current, s.Direction, s.PendingDraw, s.Winner, s.UnoTarget)
+		if s.Current != 0 || s.Direction != 1 || s.PendingDraw != 0 || s.Over() || len(s.Ranking) != 0 {
+			t.Errorf("%d players: bad start state: current %d, direction %d, pending %d, ranking %v",
+				n, s.Current, s.Direction, s.PendingDraw, s.Ranking)
 		}
 		requireEveryCardOnce(t, allCards(s))
 	}
@@ -118,21 +118,30 @@ func TestPickStartCard_NoNumberCard(t *testing.T) {
 func TestNextSeat(t *testing.T) {
 	tests := []struct {
 		players, direction, from, step, want int
+		finished                             []int // seats that already finished
 	}{
-		{4, 1, 0, 1, 1},
-		{4, 1, 3, 1, 0},  // wraps forward
-		{4, -1, 0, 1, 3}, // wraps backward: the negative % case
-		{4, 1, 3, 2, 1},  // skip
-		{4, -1, 1, 2, 3},
-		{3, -1, 0, 2, 1},
-		{2, 1, 0, 2, 0}, // two players: skip comes back to you
-		{2, -1, 1, 1, 0},
+		{4, 1, 0, 1, 1, nil},
+		{4, 1, 3, 1, 0, nil},  // wraps forward
+		{4, -1, 0, 1, 3, nil}, // wraps backward: the negative % case
+		{4, 1, 3, 2, 1, nil},  // skip
+		{4, -1, 1, 2, 3, nil},
+		{3, -1, 0, 2, 1, nil},
+		{2, 1, 0, 2, 0, nil}, // two players: skip comes back to you
+		{2, -1, 1, 1, 0, nil},
+		{4, 1, 0, 1, 2, []int{1}},    // finished seats are skipped
+		{4, 1, 0, 2, 3, []int{1}},    // and don't count for Skip
+		{4, -1, 0, 1, 2, []int{3}},   // backward too
+		{4, 1, 1, 1, 3, []int{1, 2}}, // from a seat that just finished
+		{4, 1, 0, 2, 0, []int{1, 2}}, // two left: skip comes back to you
 	}
 	for _, tt := range tests {
 		s := &GameState{Players: make([]Player, tt.players), Direction: tt.direction}
+		for i, seat := range tt.finished {
+			s.Players[seat].Place = i + 1
+		}
 		if got := s.nextSeat(tt.from, tt.step); got != tt.want {
-			t.Errorf("%d players, dir %d: nextSeat(%d, %d) = %d, want %d",
-				tt.players, tt.direction, tt.from, tt.step, got, tt.want)
+			t.Errorf("%d players, dir %d, finished %v: nextSeat(%d, %d) = %d, want %d",
+				tt.players, tt.direction, tt.finished, tt.from, tt.step, got, tt.want)
 		}
 	}
 }
@@ -172,13 +181,4 @@ func TestDrawCards_NothingLeft(t *testing.T) {
 		t.Errorf("drew %d cards with nothing left, want 0", len(drawn))
 	}
 	requireEveryCardOnce(t, allCards(s))
-}
-
-func TestDrawCards_ClearsCalledUno(t *testing.T) {
-	s := newTestGame(t, 2, 5)
-	s.Players[0].CalledUno = true
-	s.drawCards(0, 1)
-	if s.Players[0].CalledUno {
-		t.Error("drawing should clear CalledUno")
-	}
 }
