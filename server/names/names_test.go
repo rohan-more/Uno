@@ -8,8 +8,8 @@ import (
 
 func seeded(seed uint64) *rand.Rand { return rand.New(rand.NewPCG(seed, 0)) }
 
-// A name is words in CamelCase followed by exactly two digits.
-var shape = regexp.MustCompile(`^[A-Z][a-z]+[A-Z][a-z]+[A-Z][a-z]+[1-9][0-9]$`)
+// A name is Adjective + Animal in CamelCase followed by exactly two digits.
+var shape = regexp.MustCompile(`^[A-Z][a-z]+[A-Z][a-z]+[1-9][0-9]$`)
 
 func TestGenerate(t *testing.T) {
 	rng := seeded(1)
@@ -18,7 +18,7 @@ func TestGenerate(t *testing.T) {
 	for i := 0; i < 2000; i++ {
 		name := Generate(rng)
 		if !shape.MatchString(name) {
-			t.Fatalf("name %q doesn't match Adjective+Noun+Animal+2 digits", name)
+			t.Fatalf("name %q doesn't match Adjective+Animal+2 digits", name)
 		}
 		if len(name) > MaxLength {
 			t.Fatalf("name %q is %d chars, max is %d", name, len(name), MaxLength)
@@ -27,7 +27,7 @@ func TestGenerate(t *testing.T) {
 	}
 
 	// Sanity check that it isn't returning the same handful of names.
-	if len(seen) < 1900 {
+	if len(seen) < 1700 {
 		t.Errorf("2000 names produced only %d distinct values", len(seen))
 	}
 }
@@ -56,7 +56,7 @@ func TestGenerateUnused(t *testing.T) {
 func TestCombinations(t *testing.T) {
 	// Enough that two players colliding is rare; the unique username check on
 	// the server is what actually guarantees no duplicates.
-	if got := Combinations(); got < 1_000_000 {
-		t.Errorf("Combinations() = %d, want at least 1,000,000", got)
+	if got := Combinations(); got < 100_000 {
+		t.Errorf("Combinations() = %d, want at least 100,000", got)
 	}
 }

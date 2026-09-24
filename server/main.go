@@ -13,9 +13,15 @@ import (
 	"github.com/rohan-more/Uno/server/names"
 )
 
-// nameAttempts is how many names we try before giving up. A clash means the
-// username is already taken by another account, which is rare.
-const nameAttempts = 5
+const (
+	// nameAttempts is how many names we try before giving up. A clash means the
+	// username is already taken by another account, which is rare.
+	nameAttempts = 5
+
+	// avatarCount must match the number of sprites in the client's
+	// AvatarLibrary. The server only ever stores the index.
+	avatarCount = 16
+)
 
 // InitModule is the entry point Nakama calls when it loads the plugin.
 func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, initializer runtime.Initializer) error {
@@ -48,12 +54,17 @@ func afterAuthenticateDevice(ctx context.Context, logger runtime.Logger, db *sql
 	}
 
 	rng := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
+	metadata := map[string]interface{}{"avatar": rng.IntN(avatarCount)}
+
 	for i := 0; i < nameAttempts; i++ {
 		name := names.Generate(rng)
 
-		err = nk.AccountUpdateId(ctx, userID, name, nil, name, "", "", "", "")
+		err = nk.AccountUpdateId(ctx, userID, name, metadata, name, "", "", "", "")
 		if err == nil {
-			logger.WithField("user_id", userID).WithField("name", name).Info("assigned name")
+			logger.WithField("user_id", userID).
+				WithField("name", name).
+				WithField("avatar", metadata["avatar"]).
+				Info("assigned name and avatar")
 			return nil
 		}
 		if !isUsernameTaken(err) {

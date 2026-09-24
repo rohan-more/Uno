@@ -1,5 +1,6 @@
 // Package names generates player and bot display names in the style
-// Adjective + Noun + Animal + two digits, e.g. "BraveStormFalcon42".
+// Adjective + Animal + two digits, e.g. "SpryCrane15". Names are kept short so
+// they fit under a round avatar without truncation.
 package names
 
 import (
@@ -9,38 +10,36 @@ import (
 
 // MaxLength is the longest name the generator will produce, so nameplates in
 // the client have a predictable upper bound.
-const MaxLength = 20
+const MaxLength = 14
 
 var (
 	adjectives = []string{
 		"Brave", "Swift", "Calm", "Bold", "Bright", "Clever", "Quiet", "Lucky",
 		"Merry", "Noble", "Proud", "Sly", "Witty", "Eager", "Fair", "Fierce",
 		"Jolly", "Keen", "Kind", "Neat", "Sharp", "Spry", "Sunny", "Wise",
-	}
-	nouns = []string{
-		"Storm", "Ember", "River", "Dusk", "Dawn", "Frost", "Spark", "Cloud",
-		"Stone", "Wave", "Moon", "Star", "Flame", "Leaf", "Sky", "Wind",
-		"Rain", "Sand", "Snow", "Tide", "Pine", "Reef", "Dune", "Mist",
+		"Zippy", "Cosy", "Dandy", "Deft", "Fleet", "Glad", "Grand", "Hardy",
+		"Nifty", "Perky", "Rapid", "Royal", "Sleek", "Snappy", "Steady", "Vivid",
 	}
 	animals = []string{
 		"Falcon", "Otter", "Tiger", "Heron", "Panda", "Lynx", "Raven", "Bison",
 		"Koala", "Gecko", "Hawk", "Moose", "Orca", "Puma", "Robin", "Seal",
 		"Shark", "Sloth", "Swan", "Wolf", "Yak", "Zebra", "Crane", "Fox",
+		"Badger", "Bear", "Cobra", "Crab", "Deer", "Eagle", "Ibis", "Jaguar",
+		"Kiwi", "Llama", "Mole", "Newt", "Owl", "Quail", "Stork", "Viper",
 	}
 )
 
 // Combinations is how many distinct names the word lists can produce.
 func Combinations() int {
-	return len(adjectives) * len(nouns) * len(animals) * 90
+	return len(adjectives) * len(animals) * 90
 }
 
 // Generate returns one name. It retries internally until the name fits in
-// MaxLength, which the shortest words always allow.
+// MaxLength, which the shorter words always allow.
 func Generate(rng *rand.Rand) string {
 	for {
 		var b strings.Builder
 		b.WriteString(adjectives[rng.IntN(len(adjectives))])
-		b.WriteString(nouns[rng.IntN(len(nouns))])
 		b.WriteString(animals[rng.IntN(len(animals))])
 		b.WriteString(digits(rng))
 
