@@ -80,7 +80,7 @@ public class LobbyView : MonoBehaviour
     private void ShowProfile()
     {
         if (nameText != null)
-            nameText.text = Shorten(Connection.DisplayName, maxNameLength);
+            nameText.text = "Welcome \n\n" + Shorten(Connection.DisplayName, maxNameLength);
 
         if (avatarImage != null && avatars != null)
             avatarImage.sprite = avatars.Get(Connection.AvatarIndex);
