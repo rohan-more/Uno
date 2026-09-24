@@ -34,8 +34,8 @@ public class NakamaConnection : MonoBehaviour
     /// <summary>Raised after a successful ConnectAsync, on the main thread.</summary>
     public event Action OnConnected;
 
-    /// <summary>Raised when the socket drops. TODO: raise on the main thread (see below).</summary>
-    public event Action OnDisconnected;
+    /// <summary>Raised when the socket drops, with the reason the server gave.</summary>
+    public event Action<string> OnDisconnected;
 
     private const string DeviceIdKey = "uno.deviceId";
     private const string AuthTokenKey = "uno.authToken";
@@ -66,7 +66,9 @@ public class NakamaConnection : MonoBehaviour
             _session = await RestoreOrAuthenticateAsync();
             SaveSession(_session);
 
-            _socket = Socket.From(_client);
+            // useMainThread: true makes the package raise socket events on Unity's
+            // main thread, so handlers can touch the UI directly.
+            _socket = _client.NewSocket(useMainThread: true);
             _socket.Closed += HandleSocketClosed;
             await _socket.ConnectAsync(_session);
 
@@ -163,13 +165,10 @@ public class NakamaConnection : MonoBehaviour
         return await _client.RpcAsync(_session, rpcId, payload);
     }
 
-    private void HandleSocketClosed()
+    private void HandleSocketClosed(string reason)
     {
-        Debug.LogWarning("Nakama socket closed");
-        // TODO(you): socket callbacks arrive on a background thread, so anything
-        // that touches the UI must be queued and run in Update. Add a small
-        // main-thread dispatcher and raise OnDisconnected from there.
-        OnDisconnected?.Invoke();
+        Debug.LogWarning($"Nakama socket closed: {reason}");
+        OnDisconnected?.Invoke(reason);
     }
 
     private async void OnDestroy()
@@ -186,4 +185,6 @@ public class NakamaConnection : MonoBehaviour
     //  - JoinMatchAsync / LeaveMatchAsync helpers plus an OnMatchData event
     //  - reconnect handling after OnDisconnected
     //  - a Boot-scene flow that connects, then loads the Home scene
+    // Socket events arrive on the main thread (see NewSocket above), so these
+    // handlers can update UI without a dispatcher.
 }
