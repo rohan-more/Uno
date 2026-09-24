@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Threading.Tasks;
 using Nakama;
 using UnityEngine;
@@ -37,6 +38,15 @@ public class NakamaConnection : MonoBehaviour
     /// <summary>Raised when the socket drops, with the reason the server gave.</summary>
     public event Action<string> OnDisconnected;
 
+    /// <summary>
+    /// Raised for every match message: the opcode (see UnoOpCodes) and the JSON
+    /// body. Fires on the main thread, so handlers may touch the UI.
+    /// </summary>
+    public event Action<long, string> OnMatchState;
+
+    /// <summary>The match this client is in, or null.</summary>
+    public string CurrentMatchId { get; private set; }
+
     private const string DeviceIdKey = "uno.deviceId";
     private const string AuthTokenKey = "uno.authToken";
     private const string RefreshTokenKey = "uno.refreshToken";
@@ -70,6 +80,7 @@ public class NakamaConnection : MonoBehaviour
             // main thread, so handlers can touch the UI directly.
             _socket = _client.NewSocket(useMainThread: true);
             _socket.Closed += HandleSocketClosed;
+            _socket.ReceivedMatchState += HandleMatchState;
             await _socket.ConnectAsync(_session);
 
             var account = await _client.GetAccountAsync(_session);
@@ -165,10 +176,110 @@ public class NakamaConnection : MonoBehaviour
         return await _client.RpcAsync(_session, rpcId, payload);
     }
 
+    // ---------- matches ----------
+
+    /// <summary>
+    /// Asks the server for a match with a free seat, creating one if needed.
+    /// Returns the match id, or null if the call failed.
+    /// </summary>
+    public async Task<string> FindMatchAsync()
+    {
+        return await MatchIdRpcAsync("find_match");
+    }
+
+    /// <summary>
+    /// Returns the match this account still holds a seat in, or null. Used after
+    /// a relaunch: no match means go to the home screen.
+    /// </summary>
+    public async Task<string> CurrentMatchAsync()
+    {
+        return await MatchIdRpcAsync("current_match");
+    }
+
+    private async Task<string> MatchIdRpcAsync(string rpcId)
+    {
+        try
+        {
+            var response = await RpcAsync(rpcId);
+            var payload = JsonUtility.FromJson<MatchIdResponse>(response.Payload);
+            return string.IsNullOrEmpty(payload?.matchId) ? null : payload.matchId;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"{rpcId} failed: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Joins a match. The server replies with the current state.</summary>
+    public async Task<bool> JoinMatchAsync(string matchId)
+    {
+        try
+        {
+            var match = await _socket.JoinMatchAsync(matchId);
+            CurrentMatchId = match.Id;
+            return true;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Join match failed: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Leaves the current match, if any. Safe to call twice.</summary>
+    public async Task LeaveMatchAsync()
+    {
+        if (string.IsNullOrEmpty(CurrentMatchId))
+            return;
+
+        var matchId = CurrentMatchId;
+        CurrentMatchId = null;
+
+        try
+        {
+            await _socket.LeaveMatchAsync(matchId);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Leave match failed: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Sends one action to the match, e.g.
+    /// SendMatchStateAsync(UnoOpCodes.PlayCard, "{\"cardId\":57}").
+    /// </summary>
+    public async Task SendMatchStateAsync(long opCode, string json = "{}")
+    {
+        if (string.IsNullOrEmpty(CurrentMatchId))
+        {
+            Debug.LogWarning($"Dropped opcode {opCode}: not in a match");
+            return;
+        }
+
+        await _socket.SendMatchStateAsync(CurrentMatchId, opCode, json);
+    }
+
+    private void HandleMatchState(IMatchState state)
+    {
+        var json = state.State == null ? "{}" : Encoding.UTF8.GetString(state.State);
+        OnMatchState?.Invoke(state.OpCode, json);
+    }
+
+    // ---------- connection lifecycle ----------
+
     private void HandleSocketClosed(string reason)
     {
         Debug.LogWarning($"Nakama socket closed: {reason}");
+        CurrentMatchId = null;
         OnDisconnected?.Invoke(reason);
+    }
+
+    [Serializable]
+    private class MatchIdResponse
+    {
+        public string matchId;
     }
 
     private async void OnDestroy()
@@ -176,15 +287,9 @@ public class NakamaConnection : MonoBehaviour
         if (_socket != null)
         {
             _socket.Closed -= HandleSocketClosed;
+            _socket.ReceivedMatchState -= HandleMatchState;
             if (_socket.IsConnected)
                 await _socket.CloseAsync();
         }
     }
-
-    // TODO(you), once the server side exists:
-    //  - JoinMatchAsync / LeaveMatchAsync helpers plus an OnMatchData event
-    //  - reconnect handling after OnDisconnected
-    //  - a Boot-scene flow that connects, then loads the Home scene
-    // Socket events arrive on the main thread (see NewSocket above), so these
-    // handlers can update UI without a dispatcher.
 }
