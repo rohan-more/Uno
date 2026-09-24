@@ -100,3 +100,6 @@ InitTestScene*.unity*
 
 # Nakama Go plugin build output
 /server/*.so
+
+# Rider
+.idea/
