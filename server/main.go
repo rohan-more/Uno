@@ -20,7 +20,7 @@ const (
 
 	// avatarCount must match the number of sprites in the client's
 	// AvatarLibrary. The server only ever stores the index.
-	avatarCount = 16
+	avatarCount = 35
 )
 
 // InitModule is the entry point Nakama calls when it loads the plugin.
