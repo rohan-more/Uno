@@ -13,11 +13,21 @@ docker compose up -d --build
 - API and realtime socket: `localhost:7350`
 - Developer console: http://localhost:7351 (admin / password)
 
-If another Nakama is already using those ports, override them:
+Host ports come from `.env` at the repo root, because another local Nakama
+already uses the defaults:
 
-```bash
-NAKAMA_GRPC_PORT=7449 NAKAMA_HTTP_PORT=7450 NAKAMA_CONSOLE_PORT=7451 docker compose up -d --build
 ```
+NAKAMA_GRPC_PORT=7449
+NAKAMA_HTTP_PORT=7450
+NAKAMA_CONSOLE_PORT=7451
+```
+
+So the real addresses are `localhost:7450` for the client and
+http://localhost:7451 for the console. Delete `.env` to go back to 7349-7351.
+
+Both containers use `restart: unless-stopped`, so they come back on their own
+when Docker Desktop starts. If the client reports "Could not connect", check
+`docker ps` first: a running Docker daemon does not mean this stack is up.
 
 After changing Go code, run the same `up -d --build` command again; the plugin is compiled inside Docker.
 
