@@ -87,7 +87,7 @@ public class NakamaConnection : MonoBehaviour
             DisplayName = account.User.DisplayName;
             AvatarIndex = ParseAvatarIndex(account.User.Metadata);
 
-            Debug.Log($"Connected as {DisplayName} (avatar {AvatarIndex}, user {_session.UserId})");
+            Debug.Log($"Connected as {DisplayName} (avatar {AvatarIndex}, device {GetOrCreateDeviceId()}, user {_session.UserId})");
             OnConnected?.Invoke();
             return true;
         }
@@ -101,8 +101,10 @@ public class NakamaConnection : MonoBehaviour
     /// <summary>Restores the saved session, refreshes it, or logs in again.</summary>
     private async Task<ISession> RestoreOrAuthenticateAsync()
     {
-        var authToken = PlayerPrefs.GetString(AuthTokenKey, null);
-        var refreshToken = PlayerPrefs.GetString(RefreshTokenKey, null);
+        var deviceId = GetOrCreateDeviceId();
+
+        var authToken = PlayerPrefs.GetString(AuthTokenKey + deviceId, null);
+        var refreshToken = PlayerPrefs.GetString(RefreshTokenKey + deviceId, null);
 
         if (!string.IsNullOrEmpty(authToken))
         {
@@ -114,13 +116,19 @@ public class NakamaConnection : MonoBehaviour
                 return await _client.SessionRefreshAsync(restored);
         }
 
-        return await _client.AuthenticateDeviceAsync(GetOrCreateDeviceId());
+        return await _client.AuthenticateDeviceAsync(deviceId);
     }
 
+    /// <summary>
+    /// Saved per device id. PlayerPrefs is shared by every window of this build
+    /// on one machine, so a single key would make all four windows restore the
+    /// first window's session and log in as the same player.
+    /// </summary>
     private static void SaveSession(ISession session)
     {
-        PlayerPrefs.SetString(AuthTokenKey, session.AuthToken);
-        PlayerPrefs.SetString(RefreshTokenKey, session.RefreshToken);
+        var deviceId = GetOrCreateDeviceId();
+        PlayerPrefs.SetString(AuthTokenKey + deviceId, session.AuthToken);
+        PlayerPrefs.SetString(RefreshTokenKey + deviceId, session.RefreshToken);
         PlayerPrefs.Save();
     }
 
@@ -132,11 +140,17 @@ public class NakamaConnection : MonoBehaviour
     /// </summary>
     private static string GetOrCreateDeviceId()
     {
-        foreach (var arg in Environment.GetCommandLineArgs())
+        const string flag = "-deviceId";
+        var args = Environment.GetCommandLineArgs();
+
+        for (int i = 0; i < args.Length; i++)
         {
-            const string prefix = "-deviceId=";
-            if (arg.StartsWith(prefix))
-                return "uno-device-" + arg.Substring(prefix.Length);
+            // Accepts both "-deviceId=win1" and "-deviceId win1".
+            if (args[i].StartsWith(flag + "="))
+                return "uno-device-" + args[i].Substring(flag.Length + 1);
+
+            if (args[i] == flag && i + 1 < args.Length)
+                return "uno-device-" + args[i + 1];
         }
 
         if (!PlayerPrefs.HasKey(DeviceIdKey))
