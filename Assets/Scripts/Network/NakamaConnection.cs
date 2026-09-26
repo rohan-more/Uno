@@ -40,6 +40,9 @@ public class NakamaConnection : MonoBehaviour
     /// <summary>Index into AvatarLibrary, assigned by the server on first login.</summary>
     public int AvatarIndex { get; private set; }
 
+    /// <summary>This account's Nakama user id, used to spot yourself in a seat list.</summary>
+    public string UserId => _session?.UserId;
+
     /// <summary>Raised after a successful ConnectAsync, on the main thread.</summary>
     public event Action OnConnected;
 
