@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"math/rand/v2"
 	"strings"
 	"time"
@@ -10,8 +11,18 @@ import (
 	"github.com/heroiclabs/nakama-common/api"
 	"github.com/heroiclabs/nakama-common/runtime"
 
+	"github.com/rohan-more/Uno/server/game"
 	"github.com/rohan-more/Uno/server/names"
 )
+
+// The deck is compiled into the plugin, so the server has no file to find at
+// runtime. game/ cannot embed it directly: an embed path may not use "..".
+//
+//go:embed data/cards.json
+var cardsJSON []byte
+
+// catalog is the validated card list, shared by every match.
+var catalog *game.Catalog
 
 const (
 	// nameAttempts is how many names we try before giving up. A clash means the
@@ -25,6 +36,11 @@ const (
 
 // InitModule is the entry point Nakama calls when it loads the plugin.
 func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, initializer runtime.Initializer) error {
+	var err error
+	if catalog, err = game.LoadCatalog(cardsJSON); err != nil {
+		return err // a broken deck must stop the server, not break matches later
+	}
+
 	if err := initializer.RegisterAfterAuthenticateDevice(afterAuthenticateDevice); err != nil {
 		return err
 	}

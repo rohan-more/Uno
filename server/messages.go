@@ -135,6 +135,7 @@ const (
 	ErrCodeGameNotStarted    = "GAME_NOT_STARTED"
 	ErrCodeGameOver          = "GAME_OVER"
 	ErrCodeBadMessage        = "BAD_MESSAGE"
+	ErrCodeNotImplemented    = "NOT_IMPLEMENTED"
 )
 
 // ---------- client -> server ----------

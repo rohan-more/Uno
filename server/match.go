@@ -9,6 +9,7 @@ import (
 
 	"github.com/heroiclabs/nakama-common/runtime"
 
+	"github.com/rohan-more/Uno/server/game"
 	"github.com/rohan-more/Uno/server/names"
 )
 
@@ -43,8 +44,12 @@ type MatchState struct {
 	phase string
 	seats [seatCount]seat
 
-	ageTicks       int  // ticks since the match was created
-	everHadHuman   bool // so a brand new lobby is not closed before anyone can join
+	ageTicks      int             // ticks since the match was created
+	everHadHuman  bool            // so a brand new lobby is not closed before anyone can join
+	game          *game.GameState // nil until the cards are dealt
+	preMatchTicks int             // dealt table shown before the first turn
+	turnTicks     int             // ticks left in the current turn
+
 	countdownTicks int  // ticks left in the lobby; -1 until the first player joins
 	nextBotMark    int  // index into cfg.BotJoinAtMsLeft
 	noHumanTicks   int  // consecutive ticks with nobody connected
@@ -100,10 +105,17 @@ func (m *UnoMatch) MatchJoin(ctx context.Context, logger runtime.Logger, db *sql
 	s := state.(*MatchState)
 
 	for _, p := range presences {
-		// Returning to a seat we already hold: just mark it connected again.
+		// Returning to a seat we already hold: mark it connected again and
+		// catch the player up with a fresh snapshot.
 		if idx := s.seatOfUser(p.GetUserId()); idx >= 0 && s.seats[idx].kind == KindHuman {
 			s.seats[idx].connected = true
 			s.seats[idx].presence = p
+			logger.WithField("seat", idx).Info("player reconnected")
+
+			if s.phase == phasePlaying {
+				s.sendGameState(logger, dispatcher, idx)
+				s.broadcastEvents(logger, dispatcher, []EventMsg{connectionEvent(idx, true)})
+			}
 			continue
 		}
 
@@ -153,10 +165,12 @@ func (m *UnoMatch) MatchLeave(ctx context.Context, logger runtime.Logger, db *sq
 			continue
 		}
 
-		// TODO: during play, hand the seat to a bot permanently and broadcast
-		// SEAT_CONTROL. Comes with the game half of the handler.
+		// TODO: during play, leaving should hand the seat to a bot permanently
+		// and broadcast SEAT_CONTROL. That arrives with the turn logic.
 		s.seats[idx].connected = false
 		s.seats[idx].presence = nil
+		logger.WithField("seat", idx).Info("player disconnected")
+		s.broadcastEvents(logger, dispatcher, []EventMsg{connectionEvent(idx, false)})
 	}
 
 	s.labelDirty = true
@@ -195,10 +209,11 @@ func (m *UnoMatch) MatchLoop(ctx context.Context, logger runtime.Logger, db *sql
 
 	if s.phase == phaseLobby {
 		s.tickLobby(logger, dispatcher)
+	} else if s.phase == phasePlaying {
+		s.tickPlaying(logger, dispatcher)
 	}
 
-	// TODO: the playing phase (turn timers, actions, bots) is the next chunk of
-	// work; incoming messages are ignored until then.
+	s.handleMessages(logger, dispatcher, messages)
 
 	if s.labelDirty {
 		if err := dispatcher.MatchLabelUpdate(s.label()); err != nil {
@@ -273,13 +288,197 @@ func (s *MatchState) startMatch(logger runtime.Logger, dispatcher runtime.MatchD
 		}
 	}
 
-	s.phase = phasePlaying
-	s.labelDirty = true
-	logger.WithField("humans", s.humanCount()).Info("match starting")
+	// Player ids are labels for the rules package; it never sees Nakama.
+	playerIDs := make([]string, seatCount)
+	for i, st := range s.seats {
+		if st.kind == KindHuman {
+			playerIDs[i] = st.userID
+		} else {
+			playerIDs[i] = "bot:" + st.name
+		}
+	}
 
-	// TODO: deal with game.NewGame and send each seat its GAME_STATE. Until the
-	// game half exists the match simply sits in the playing phase.
+	g, err := game.NewGame(catalog, playerIDs, s.rng.Uint64())
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("could not deal, closing match")
+		s.phase = phaseDone
+		return
+	}
+
+	s.game = g
+	s.phase = phasePlaying
+	s.preMatchTicks = s.cfg.PreMatchMs / msPerTick
+	s.labelDirty = true
+	logger.WithField("humans", s.humanCount()).WithField("seed", g.Seed).Info("match starting")
+
+	// Everyone gets their own snapshot: their hand, and counts for the rest.
+	for i, st := range s.seats {
+		if st.kind == KindHuman && st.presence != nil {
+			s.sendGameState(logger, dispatcher, i)
+		}
+	}
 }
+
+// tickPlaying runs the pre-match pause, then hands the first turn over.
+// Card play and turn timeouts come next; for now the turn simply opens.
+func (s *MatchState) tickPlaying(logger runtime.Logger, dispatcher runtime.MatchDispatcher) {
+	if s.preMatchTicks > 0 {
+		s.preMatchTicks--
+		if s.preMatchTicks > 0 {
+			return
+		}
+
+		s.turnTicks = s.cfg.TurnMs / msPerTick
+		s.broadcastEvents(logger, dispatcher, []EventMsg{{
+			Type:        EvTurnChanged,
+			Seat:        s.game.Current,
+			TurnMs:      s.cfg.TurnMs,
+			PendingDraw: s.game.PendingDraw,
+		}})
+		logger.WithField("seat", s.game.Current).Info("first turn")
+	}
+
+	// TODO: turn timer, actions, bot moves and game over.
+}
+
+// handleMessages processes what clients sent this tick. Card play arrives with
+// the next chunk of work; until then only REQUEST_STATE does anything.
+func (s *MatchState) handleMessages(logger runtime.Logger, dispatcher runtime.MatchDispatcher, messages []runtime.MatchData) {
+	for _, m := range messages {
+		seat := s.seatOfUser(m.GetUserId())
+		if seat < 0 {
+			continue
+		}
+
+		switch m.GetOpCode() {
+		case OpRequestState:
+			if s.phase == phasePlaying {
+				s.sendGameState(logger, dispatcher, seat)
+			}
+
+		case OpPlayCard, OpDrawCard, OpPass:
+			if s.phase != phasePlaying {
+				s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "the match has not started")
+				continue
+			}
+			// TODO: run the action through game.Apply and broadcast the events.
+			s.sendError(logger, dispatcher, m, ErrCodeNotImplemented, "card play is not wired up yet")
+
+		default:
+			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, "unknown opcode")
+		}
+	}
+}
+
+// sendGameState sends one seat its personalized snapshot.
+func (s *MatchState) sendGameState(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int) {
+	if s.game == nil || !s.seatValid(seat) || s.seats[seat].presence == nil {
+		return
+	}
+
+	data, err := json.Marshal(s.buildGameState(seat))
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("encode game state")
+		return
+	}
+	err = dispatcher.BroadcastMessage(OpGameState, data, []runtime.Presence{s.seats[seat].presence}, nil, true)
+	if err != nil {
+		logger.WithField("error", err.Error()).Warn("send game state")
+	}
+}
+
+// buildGameState is the only place that decides what a player may see: their
+// own hand in full, everyone else as a card count.
+func (s *MatchState) buildGameState(seat int) GameStateMsg {
+	g := s.game
+
+	msg := GameStateMsg{
+		You:         seat,
+		Seats:       make([]GameSeat, 0, seatCount),
+		Hand:        toCardMsgs(g.Players[seat].Hand),
+		TopCard:     toCardMsg(g.TopCard()),
+		ActiveColor: string(g.ActiveColor),
+		Direction:   g.Direction,
+		CurrentSeat: g.Current,
+		PendingDraw: g.PendingDraw,
+		DeckCount:   g.Deck.Len(),
+		TurnMsLeft:  s.turnTicks * msPerTick,
+		StartsInMs:  s.preMatchTicks * msPerTick,
+		Ranking:     g.Ranking,
+		Seq:         s.seq,
+	}
+
+	for i, st := range s.seats {
+		msg.Seats = append(msg.Seats, GameSeat{
+			Seat:      i,
+			Kind:      st.kind,
+			Name:      st.name,
+			Avatar:    st.avatar,
+			CardCount: len(g.Players[i].Hand),
+			Place:     g.Players[i].Place,
+			Connected: st.kind == KindBot || st.connected,
+		})
+	}
+
+	// Only the player who drew it knows which card is waiting to be played.
+	if seat == g.Current && g.DrawnCard != nil {
+		id := g.DrawnCard.ID
+		msg.DrawnCardID = &id
+	}
+	return msg
+}
+
+// broadcastEvents sends one batch to everyone, stripping cards each player is
+// not allowed to see.
+func (s *MatchState) broadcastEvents(logger runtime.Logger, dispatcher runtime.MatchDispatcher, events []EventMsg) {
+	if len(events) == 0 {
+		return
+	}
+	s.seq++
+
+	for i, st := range s.seats {
+		if st.kind != KindHuman || st.presence == nil {
+			continue
+		}
+
+		msg := EventsMsg{Seq: s.seq, Events: hideCards(events, i)}
+		data, err := json.Marshal(msg)
+		if err != nil {
+			logger.WithField("error", err.Error()).Error("encode events")
+			return
+		}
+		err = dispatcher.BroadcastMessage(OpEvents, data, []runtime.Presence{st.presence}, nil, true)
+		if err != nil {
+			logger.WithField("error", err.Error()).Warn("send events")
+		}
+	}
+}
+
+// hideCards copies the batch for one seat, removing drawn cards that belong to
+// somebody else. The count stays, so everyone can animate the draw.
+func hideCards(events []EventMsg, seat int) []EventMsg {
+	out := make([]EventMsg, len(events))
+	for i, e := range events {
+		if e.Type == EvCardsDrawn && e.Seat != seat {
+			e.Cards = nil
+		}
+		out[i] = e
+	}
+	return out
+}
+
+// sendError replies to one player; nothing about the match changes.
+func (s *MatchState) sendError(logger runtime.Logger, dispatcher runtime.MatchDispatcher, presence runtime.Presence, code, message string) {
+	data, err := json.Marshal(ErrorMsg{Code: code, Message: message})
+	if err != nil {
+		return
+	}
+	if err := dispatcher.BroadcastMessage(OpError, data, []runtime.Presence{presence}, nil, true); err != nil {
+		logger.WithField("error", err.Error()).Warn("send error")
+	}
+}
+
+func (s *MatchState) seatValid(seat int) bool { return seat >= 0 && seat < seatCount }
 
 func (s *MatchState) broadcastLobby(logger runtime.Logger, dispatcher runtime.MatchDispatcher) {
 	if s.phase != phaseLobby {
@@ -428,4 +627,9 @@ func profileOf(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModu
 		_ = json.Unmarshal([]byte(raw), &meta)
 	}
 	return name, meta.Avatar
+}
+
+// connectionEvent tells the table someone dropped or came back.
+func connectionEvent(seat int, connected bool) EventMsg {
+	return EventMsg{Type: EvPlayerConnection, Seat: seat, Connected: &connected}
 }
