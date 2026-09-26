@@ -67,14 +67,15 @@ has time to join.
 - If the last human leaves before the start, the match closes.
 - **Nobody joins after the match has started.**
 
-**op 100 `LOBBY_STATE`** — broadcast on every lobby change:
+**op 100 `LOBBY_STATE`** — broadcast on every lobby change. `avatar` indexes the
+client's AvatarLibrary; bots are always `connected`:
 
 ```json
 {
   "countdownMsLeft": 8000,
   "seats": [
-    { "seat": 0, "kind": "human", "userId": "u-…", "name": "BraveStormFalcon42", "connected": true },
-    { "seat": 1, "kind": "bot",   "name": "QuietRiverOtter18" },
+    { "seat": 0, "kind": "human", "userId": "u-…", "name": "BraveStormFalcon42", "avatar": 7, "connected": true },
+    { "seat": 1, "kind": "bot",   "name": "QuietRiverOtter18", "avatar": 22, "connected": true },
     { "seat": 2, "kind": "empty" },
     { "seat": 3, "kind": "empty" }
   ]

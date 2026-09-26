@@ -55,13 +55,20 @@ public class ScreenFlow : MonoBehaviour
         SetVisible(matchmakingPanel, false, instant: true);
     }
 
-    /// <summary>Home screen visible, matchmaking hidden.</summary>
-    public void ShowLobby()
+    /// <summary>
+    /// Home screen visible, matchmaking hidden. Backing out of matchmaking also
+    /// leaves the match, or the server would keep the seat and start the game
+    /// without you.
+    /// </summary>
+    public async void ShowLobby()
     {
         if (matchmaking != null)
             matchmaking.ClearSlots();
 
         Switch(from: matchmakingPanel, to: lobbyPanel);
+
+        if (Connection != null)
+            await Connection.LeaveMatchAsync();
     }
 
     /// <summary>
