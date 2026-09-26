@@ -35,12 +35,14 @@ same code can drive bots or a simulator.
 | `game/deck.go` | Draw pile: build 108 cards, seeded shuffle, draw, refill from the discard pile |
 | `game/state.go` | `GameState`: seats, hands, discard, direction, pending draws, finishing places. Deals a new game |
 | `game/apply.go` | The rules. `Apply(seat, action)` validates a move, applies it and returns the events it caused |
+| `config.go` | Tunable timings. Defaults in code, overridden by a storage object you can edit in the Nakama console; bad values fall back and are logged |
+| `messages.go` | Every wire type and opcode from PROTOCOL.md, in Go |
+| `match.go` | The authoritative match: seats, the lobby countdown, bots filling empty seats, label updates, LOBBY_STATE broadcasts |
+| `rpc.go` | `find_match` (list open lobbies, else create), `current_match` (which match you still hold a seat in), `reset_config` |
 | `data/cards.json` | The 108-card deck, shared with the Unity sprite ids |
 
-**Planned next:** `config.go` (tunables in a storage object), `messages.go`
-(wire types and per-player views), `match.go` (the match handler: lobby,
-countdown, bots, turns), `rpc.go` (`find_match`, `current_match`),
-`game/bot.go` (bot moves).
+**Planned next:** the playing half of `match.go` (deal, turn timers, actions,
+bot takeover, game over) and `game/bot.go` (bot moves).
 
 ### Two ideas worth knowing
 
@@ -74,7 +76,9 @@ once the client plays through the server.
    username, which is unique server-wide.
 2. **Find a match.** `find_match` lists open lobbies; if none has a free seat it
    creates one. The client joins by id over the socket.
-3. **Lobby.** A 12-second countdown starts with the first player. Bots take
+3. **Lobby.** A new lobby waits up to 10 seconds for its creator to actually
+   join, then closes if nobody did. A 12-second countdown starts with the first
+   player. Bots take
    empty seats at 8, 5 and 3 seconds left. A human who arrives later takes an
    empty seat, or the lowest bot seat if the table is full. At 1 second left the
    lobby closes to new players. `LOBBY_STATE` after every change drives the

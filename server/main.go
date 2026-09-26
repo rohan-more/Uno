@@ -28,6 +28,20 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 	if err := initializer.RegisterAfterAuthenticateDevice(afterAuthenticateDevice); err != nil {
 		return err
 	}
+	if err := initializer.RegisterMatch(matchModuleName, func(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule) (runtime.Match, error) {
+		return &UnoMatch{}, nil
+	}); err != nil {
+		return err
+	}
+	if err := initializer.RegisterRpc("find_match", rpcFindMatch); err != nil {
+		return err
+	}
+	if err := initializer.RegisterRpc("current_match", rpcCurrentMatch); err != nil {
+		return err
+	}
+	if err := initializer.RegisterRpc("reset_config", rpcResetConfig); err != nil {
+		return err
+	}
 
 	logger.Info("Uno module loaded")
 	return nil
