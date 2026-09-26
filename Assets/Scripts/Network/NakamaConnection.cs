@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Nakama;
@@ -18,6 +19,13 @@ public class NakamaConnection : MonoBehaviour
     [SerializeField] private string host = "127.0.0.1";
     [SerializeField] private int port = 7450;          // local stack; 7350 is the Nakama default
     [SerializeField] private string serverKey = "defaultkey";
+
+    [Header("Testing")]
+    [Tooltip("Each window on this PC claims its own profile, so several builds " +
+             "run side by side as different players. Turn off for a real build.")]
+    [SerializeField] private bool multiInstanceProfiles = true;
+
+    [SerializeField] private int maxProfiles = 8;
 
     private IClient _client;
     private ISession _session;
@@ -51,6 +59,17 @@ public class NakamaConnection : MonoBehaviour
     private const string AuthTokenKey = "uno.authToken";
     private const string RefreshTokenKey = "uno.refreshToken";
 
+    /// <summary>Held open for the app's lifetime; see ClaimProfileDeviceId.</summary>
+    private static FileStream _profileLock;
+
+    /// <summary>Worked out once, then reused by every call.</summary>
+    private static string _deviceId;
+
+    // Static copies of the inspector settings, so the device id can be resolved
+    // from static helpers.
+    private static bool _multiInstanceProfiles;
+    private static int _maxProfiles;
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -61,6 +80,9 @@ public class NakamaConnection : MonoBehaviour
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
+
+        _multiInstanceProfiles = multiInstanceProfiles;
+        _maxProfiles = Mathf.Max(1, maxProfiles);
     }
 
     /// <summary>
@@ -133,13 +155,19 @@ public class NakamaConnection : MonoBehaviour
     }
 
     /// <summary>
-    /// PlayerPrefs is shared by every window of this build on one machine, so all
-    /// of them would log in as the same account. Pass -deviceId=win2 to give a
-    /// window its own identity (Uno.exe -deviceId=win2).
+    /// Which account this window logs in as. PlayerPrefs is shared by every
+    /// window of this build on one machine, so without this they would all be
+    /// the same player. In order:
+    ///   1. -deviceId=win2 on the command line, when you want a specific account
+    ///   2. a free profile slot, claimed automatically (see ClaimProfileDeviceId)
+    ///   3. the saved id, the normal single-window case
     /// Nakama requires 10-128 characters, hence the prefix.
     /// </summary>
     private static string GetOrCreateDeviceId()
     {
+        if (_deviceId != null)
+            return _deviceId;
+
         const string flag = "-deviceId";
         var args = Environment.GetCommandLineArgs();
 
@@ -147,10 +175,17 @@ public class NakamaConnection : MonoBehaviour
         {
             // Accepts both "-deviceId=win1" and "-deviceId win1".
             if (args[i].StartsWith(flag + "="))
-                return "uno-device-" + args[i].Substring(flag.Length + 1);
+                return _deviceId = "uno-device-" + args[i].Substring(flag.Length + 1);
 
             if (args[i] == flag && i + 1 < args.Length)
-                return "uno-device-" + args[i + 1];
+                return _deviceId = "uno-device-" + args[i + 1];
+        }
+
+        if (_multiInstanceProfiles)
+        {
+            var claimed = ClaimProfileDeviceId(_maxProfiles);
+            if (claimed != null)
+                return _deviceId = claimed;
         }
 
         if (!PlayerPrefs.HasKey(DeviceIdKey))
@@ -159,7 +194,36 @@ public class NakamaConnection : MonoBehaviour
             PlayerPrefs.Save();
         }
 
-        return PlayerPrefs.GetString(DeviceIdKey);
+        return _deviceId = PlayerPrefs.GetString(DeviceIdKey);
+    }
+
+    /// <summary>
+    /// Takes the first profile no other window is using, so double-clicking the
+    /// build several times gives you several different players with no command
+    /// line. The claim is a lock file held open until this process exits; the
+    /// next window finds it locked and moves on to the next number. The file
+    /// deletes itself on close, so nothing accumulates.
+    /// Returns null if every slot is taken.
+    /// </summary>
+    private static string ClaimProfileDeviceId(int maxProfiles)
+    {
+        for (int i = 1; i <= maxProfiles; i++)
+        {
+            var path = Path.Combine(Application.persistentDataPath, $"profile{i}.lock");
+            try
+            {
+                _profileLock = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                    FileShare.None, 8, FileOptions.DeleteOnClose);
+                return $"uno-device-profile{i}";
+            }
+            catch (IOException)
+            {
+                // Another window holds this one; try the next.
+            }
+        }
+
+        Debug.LogWarning($"All {maxProfiles} test profiles are in use; falling back to the saved id");
+        return null;
     }
 
     /// <summary>Account metadata is JSON: {"avatar":7}. Missing or bad data means 0.</summary>
@@ -305,5 +369,11 @@ public class NakamaConnection : MonoBehaviour
             if (_socket.IsConnected)
                 await _socket.CloseAsync();
         }
+
+        // Frees the profile slot for the next window. A killed process releases
+        // it too, since Windows closes the handle.
+        _profileLock?.Dispose();
+        _profileLock = null;
+        _deviceId = null;
     }
 }
