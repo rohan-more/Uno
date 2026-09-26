@@ -49,7 +49,9 @@ A match always has **4 seats**. Empty seats are filled with bots.
 RPC find_match {}  ->  { "matchId": "…" }   then socket.JoinMatchAsync(matchId)
 ```
 
-`find_match` returns a lobby that still has room, or creates one.
+`find_match` returns a lobby that still has room, or creates one. A new lobby
+survives `emptyLobbyGraceMs` without any player, so the client that created it
+has time to join.
 
 **Countdown** (all values configurable, see §8):
 
@@ -65,14 +67,15 @@ RPC find_match {}  ->  { "matchId": "…" }   then socket.JoinMatchAsync(matchId
 - If the last human leaves before the start, the match closes.
 - **Nobody joins after the match has started.**
 
-**op 100 `LOBBY_STATE`** — broadcast on every lobby change:
+**op 100 `LOBBY_STATE`** — broadcast on every lobby change. `avatar` indexes the
+client's AvatarLibrary; bots are always `connected`:
 
 ```json
 {
   "countdownMsLeft": 8000,
   "seats": [
-    { "seat": 0, "kind": "human", "userId": "u-…", "name": "BraveStormFalcon42", "connected": true },
-    { "seat": 1, "kind": "bot",   "name": "QuietRiverOtter18" },
+    { "seat": 0, "kind": "human", "userId": "u-…", "name": "BraveStormFalcon42", "avatar": 7, "connected": true },
+    { "seat": 1, "kind": "bot",   "name": "QuietRiverOtter18", "avatar": 22, "connected": true },
     { "seat": 2, "kind": "empty" },
     { "seat": 3, "kind": "empty" }
   ]
@@ -230,6 +233,7 @@ key:        match
   "missedTurnsForBot": 2,
   "disconnectBotMs": 15000,
   "botThinkMs": 0,
+  "emptyLobbyGraceMs": 10000,
   "noHumansCloseMs": 10000,
   "postGameCloseMs": 30000
 }
