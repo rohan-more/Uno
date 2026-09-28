@@ -27,6 +27,7 @@ type EventType string
 
 const (
 	EvCardPlayed       EventType = "CARD_PLAYED"
+	EvPlayerSkipped    EventType = "PLAYER_SKIPPED"
 	EvCardsDrawn       EventType = "CARDS_DRAWN"
 	EvDirectionChanged EventType = "DIRECTION_CHANGED"
 	EvTurnChanged      EventType = "TURN_CHANGED"
@@ -180,6 +181,9 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	switch def.Type {
 	case Skip:
 		step = 2
+		// Say who lost their turn, so the client can show it rather than infer
+		// it from the turn jumping two seats.
+		events = append(events, Event{Type: EvPlayerSkipped, Seat: s.nextSeat(seat, 1)})
 	case Reverse:
 		s.Direction = -s.Direction
 		events = append(events, Event{Type: EvDirectionChanged, Seat: seat})

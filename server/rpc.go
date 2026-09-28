@@ -102,6 +102,10 @@ func rpcResetConfig(ctx context.Context, logger runtime.Logger, db *sql.DB, nk r
 // ---------- storage helpers used by the match handler ----------
 
 func writeCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID, matchID string) {
+	if nk == nil || userID == "" {
+		return // a bot seat, or a test without a server
+	}
+
 	value, err := json.Marshal(currentMatchRecord{MatchID: matchID})
 	if err != nil {
 		return
@@ -121,6 +125,10 @@ func writeCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.Na
 }
 
 func clearCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID string) {
+	if nk == nil || userID == "" {
+		return
+	}
+
 	err := nk.StorageDelete(ctx, []*runtime.StorageDelete{{
 		Collection: matchCollection,
 		Key:        matchKey,

@@ -159,3 +159,40 @@ func toCardMsgs(cards []game.Card) []CardMsg {
 	}
 	return out
 }
+
+// toEventMsgs converts what the rules engine reported into wire events. The
+// turn timer and pending draw live on the handler, so they are attached here.
+func toEventMsgs(events []game.Event, turnMs, pendingDraw int) []EventMsg {
+	out := make([]EventMsg, 0, len(events))
+
+	for _, e := range events {
+		msg := EventMsg{Type: string(e.Type), Seat: e.Seat}
+
+		switch e.Type {
+		case game.EvCardPlayed:
+			card := toCardMsg(e.Card)
+			msg.Card = &card
+			msg.Color = string(e.Color)
+
+		case game.EvCardsDrawn:
+			msg.Count = len(e.Cards)
+			msg.Cards = toCardMsgs(e.Cards) // stripped per player before sending
+
+		case game.EvDirectionChanged:
+			msg.Direction = 0 // filled in by the caller, which knows the state
+
+		case game.EvTurnChanged:
+			msg.TurnMs = turnMs
+			msg.PendingDraw = pendingDraw
+
+		case game.EvPlayerFinished:
+			msg.Place = e.Place
+
+		case game.EvGameOver:
+			msg.Ranking = e.Ranking
+		}
+
+		out = append(out, msg)
+	}
+	return out
+}
