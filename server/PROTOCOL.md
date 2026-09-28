@@ -202,13 +202,18 @@ its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
   - **2 missed turns in a row** (acting in time resets the counter), or
   - **15 s disconnected**, so a drop right after one's turn is noticed before the
     turn comes round again.
+- **The last human leaving ends the match.** There is no point handing the final
+  seat to a bot and playing to an empty room, so the match closes instead.
 - **Takeover is permanent.** The player never gets the seat back. Reconnecting
   or relaunching lands them on the home screen; they do not spectate. Rejoining
   is refused with `SEAT_TAKEN_BY_BOT`.
 - **Reconnect inside the window:** the client rejoins the same match id (see
   `current_match`) and receives a fresh `GAME_STATE`. Others get
   `PLAYER_CONNECTION connected:true`.
-- **Bot turns** have no timer; the bot acts after `botThinkMs` (default 0).
+- **Bot turns** have no timer; the bot acts after `botThinkMs` (default 1200 ms).
+- **Every move is followed by `turnGapMs`** before the next seat may act, so a
+  run of bot turns does not resolve in a single frame and clients have time to
+  animate.
 - **Nobody left:** when no human has been connected for ~10 s, the match closes.
 - **Phase 2 bot:** placeholder logic (first legal card, most-held color,
   otherwise draw and pass) behind one `BotAction` function. The heuristic bot
@@ -230,9 +235,10 @@ key:        match
   "botJoinAtMsLeft": [8000, 5000, 3000],
   "preMatchMs": 3000,
   "turnMs": 8000,
+  "turnGapMs": 500,
   "missedTurnsForBot": 2,
   "disconnectBotMs": 15000,
-  "botThinkMs": 0,
+  "botThinkMs": 1200,
   "emptyLobbyGraceMs": 10000,
   "noHumansCloseMs": 10000,
   "postGameCloseMs": 30000

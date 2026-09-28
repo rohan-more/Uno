@@ -51,6 +51,7 @@ type MatchState struct {
 	preMatchTicks int             // dealt table shown before the first turn
 	turnTicks     int             // ticks left in the current turn
 	botThinkTicks int             // pause before a bot plays, so moves are watchable
+	gapTicks      int             // pause after any move, so turns do not race past
 	closeTicks    int             // ticks left before a finished match shuts down
 
 	missedTurns  [seatCount]int // consecutive timeouts, reset by acting in time
@@ -361,6 +362,13 @@ func (s *MatchState) tickPlaying(ctx context.Context, logger runtime.Logger, nk 
 
 	s.tickAwaySeats(ctx, logger, nk, dispatcher)
 
+	// A short breath after every move, so clients can finish animating and
+	// three bots in a row do not resolve in one frame.
+	if s.gapTicks > 0 {
+		s.gapTicks--
+		return
+	}
+
 	// A bot seat plays by itself after a short pause.
 	if s.seats[s.game.Current].kind == KindBot {
 		if s.botThinkTicks > 0 {
@@ -455,10 +463,12 @@ func (s *MatchState) afterAction(logger runtime.Logger, dispatcher runtime.Match
 	}
 }
 
-// beginTurn restarts the clock for whoever is on turn now.
+// beginTurn restarts the clocks for whoever is on turn now. The gap runs first,
+// then the bot's thinking pause, then the turn timer.
 func (s *MatchState) beginTurn() {
 	s.turnTicks = s.cfg.TurnMs / msPerTick
 	s.botThinkTicks = s.cfg.BotThinkMs / msPerTick
+	s.gapTicks = s.cfg.TurnGapMs / msPerTick
 }
 
 func (s *MatchState) turnChangedEvent() EventMsg {
@@ -474,6 +484,15 @@ func (s *MatchState) turnChangedEvent() EventMsg {
 // rejoin, so their client falls back to the home screen.
 func (s *MatchState) giveSeatToBot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher, seat int, reason string) {
 	if s.seats[seat].kind != KindHuman {
+		return
+	}
+
+	// Nobody would be left watching, so end the match instead of handing the
+	// last seat to a bot and playing to an empty room.
+	if s.seatedHumans() == 1 {
+		logger.WithField("seat", seat).WithField("reason", reason).Info("last player gone, closing match")
+		clearCurrentMatch(ctx, logger, nk, s.seats[seat].userID)
+		s.closeRequest = true
 		return
 	}
 
@@ -701,6 +720,18 @@ func (s *MatchState) freeSeat() int {
 		}
 	}
 	return -1
+}
+
+// seatedHumans counts human seats whether or not they are currently connected,
+// unlike humanCount which only counts the ones present.
+func (s *MatchState) seatedHumans() int {
+	n := 0
+	for _, seat := range s.seats {
+		if seat.kind == KindHuman {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *MatchState) humanCount() int {

@@ -61,8 +61,8 @@ func TestTurnTimeout_DrawsAndMovesOn(t *testing.T) {
 	}
 	handBefore := len(s.game.Players[0].Hand)
 
-	// Let the turn run out.
-	for i := 0; i < s.cfg.TurnMs/msPerTick; i++ {
+	// Let the turn run out: the gap after the previous move runs first.
+	for i := 0; i < (s.cfg.TurnGapMs+s.cfg.TurnMs)/msPerTick+2; i++ {
 		s.tickPlaying(ctx, logger, nil, d)
 	}
 
@@ -163,5 +163,55 @@ func TestClientAction_LegalPlayAdvancesTheTurn(t *testing.T) {
 	}
 	if s.missedTurns[0] != 0 {
 		t.Error("acting in time should clear the missed turn counter")
+	}
+}
+
+func TestLastHumanGone_ClosesInsteadOfHandingToABot(t *testing.T) {
+	s := dealtMatch(t)
+	// One human, the rest bots: nobody would be left watching.
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	s.seats[2] = seat{kind: KindBot, name: "Bot2", connected: true}
+	d := &fakeDispatcher{}
+	ctx, logger := context.Background(), testLogger{}
+
+	for tick := 0; tick < 3000 && !s.closeRequest; tick++ {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+
+	if !s.closeRequest {
+		t.Fatal("match should close once the only human stops playing")
+	}
+	if s.seats[0].kind != KindHuman {
+		t.Error("the last seat should not be handed to a bot")
+	}
+	if len(d.events(EvSeatControl)) != 0 {
+		t.Error("no SEAT_CONTROL should be sent when the match is simply closing")
+	}
+}
+
+func TestTurnGap_DelaysTheNextMove(t *testing.T) {
+	s := dealtMatch(t)
+	for i := range s.seats { // all bots, so only the clock decides the pace
+		s.seats[i] = seat{kind: KindBot, name: "Bot", connected: true}
+	}
+	d := &fakeDispatcher{}
+	ctx, logger := context.Background(), testLogger{}
+
+	for s.preMatchTicks > 0 {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+	discardBefore := len(s.game.Discard)
+
+	// One tick is not enough: the gap and the bot's thinking pause come first.
+	s.tickPlaying(ctx, logger, nil, d)
+	if len(s.game.Discard) != discardBefore {
+		t.Error("a bot played immediately, with no pause")
+	}
+
+	for i := 0; i < (s.cfg.TurnGapMs+s.cfg.BotThinkMs)/msPerTick+2; i++ {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+	if len(s.game.Discard) == discardBefore && len(s.game.Players[0].Hand) == game.HandSize {
+		t.Error("the bot never moved after its pause")
 	}
 }
