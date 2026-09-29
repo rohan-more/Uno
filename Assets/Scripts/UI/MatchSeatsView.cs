@@ -16,6 +16,10 @@ public class MatchSeatsView : MonoBehaviour
     [Serializable]
     public class SeatPanel
     {
+        [Tooltip("Where this panel sits at the table. Card animations use it to " +
+                 "fly cards to the right place.")]
+        public PlayerSeat seat;
+
         public Image avatar;
         public TMP_Text nameText;
 
@@ -107,6 +111,27 @@ public class MatchSeatsView : MonoBehaviour
     {
         var offset = state.OffsetFromYou(seat);
         return offset >= 0 && offset < panels.Length ? panels[offset] : null;
+    }
+
+    /// <summary>
+    /// Where a server seat sits at this player's table, e.g. for flying a played
+    /// card from the right position. Falls back to the bottom seat.
+    /// </summary>
+    public PlayerSeat SeatPositionFor(int serverSeat)
+    {
+        var state = presenter != null ? presenter.State : null;
+        if (state == null)
+            return PlayerSeat.BottomPlayer;
+
+        var panel = PanelFor(state, serverSeat);
+        return panel != null ? panel.seat : PlayerSeat.BottomPlayer;
+    }
+
+    /// <summary>The panel for a server seat, so other views can reuse the mapping.</summary>
+    public SeatPanel PanelForSeat(int serverSeat)
+    {
+        var state = presenter != null ? presenter.State : null;
+        return state != null ? PanelFor(state, serverSeat) : null;
     }
 
     private static string Ordinal(int place)
