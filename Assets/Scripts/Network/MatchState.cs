@@ -125,6 +125,56 @@ public class MatchState
         return null;
     }
 
+    /// <summary>
+    /// Whether one of your cards may be played right now. This mirrors the
+    /// server's rules so the UI can highlight cards without asking; the server
+    /// still decides, and a mismatch just means a rejected play.
+    /// </summary>
+    public bool CanPlay(CardInstance card, CardDatabase database)
+    {
+        if (card == null || database == null || TopCard == null)
+            return false;
+
+        var def = database.GetById(card.CardId);
+        var top = database.GetById(TopCard.CardId);
+        if (def == null || top == null)
+            return false;
+
+        // After drawing, only the drawn card may be played.
+        if (DrawnCardId >= 0 && card.InstanceId != DrawnCardId)
+            return false;
+
+        // Cards are owed: only the same draw card answers them.
+        if (PendingDraw > 0)
+            return def.Type == top.Type;
+
+        if (def.Type == CardType.Wild || def.Type == CardType.WildDrawFour)
+            return true;
+
+        if (def.Color == ActiveColor)
+            return true;
+
+        if (def.Type == CardType.Number)
+            return top.Type == CardType.Number && def.Number == top.Number;
+
+        return def.Type == top.Type; // symbol match: Skip on Skip, and so on
+    }
+
+    /// <summary>Your cards that may be played right now, for highlighting.</summary>
+    public List<CardInstance> PlayableCards(CardDatabase database)
+    {
+        var playable = new List<CardInstance>();
+        if (!IsYourTurn)
+            return playable;
+
+        foreach (var card in Hand)
+        {
+            if (CanPlay(card, database))
+                playable.Add(card);
+        }
+        return playable;
+    }
+
     public static CardInstance ToCard(CardMsg msg)
     {
         if (msg == null || msg.IsEmpty)

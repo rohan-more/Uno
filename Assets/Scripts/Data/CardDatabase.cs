@@ -47,8 +47,16 @@ public class CardDatabase : ScriptableObject
         }
     }
 
+    /// <summary>
+    /// The definition for a card id, or null if this build doesn't know it.
+    /// Returning null keeps one missing card from killing a whole match; callers
+    /// show a blank card instead.
+    /// </summary>
     public CardDefinition GetById(string id)
     {
-        return lookup[id];
+        if (lookup == null)
+            Initialize();
+
+        return lookup.TryGetValue(id, out var definition) ? definition : null;
     }
 }
