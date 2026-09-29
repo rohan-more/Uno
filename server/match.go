@@ -581,6 +581,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 		CurrentSeat: g.Current,
 		PendingDraw: g.PendingDraw,
 		DeckCount:   g.Deck.Len(),
+		DrawnCardID: -1,
 		TurnMsLeft:  s.turnTicks * msPerTick,
 		StartsInMs:  s.preMatchTicks * msPerTick,
 		Ranking:     g.Ranking,
@@ -601,8 +602,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 
 	// Only the player who drew it knows which card is waiting to be played.
 	if seat == g.Current && g.DrawnCard != nil {
-		id := g.DrawnCard.ID
-		msg.DrawnCardID = &id
+		msg.DrawnCardID = g.DrawnCard.ID
 	}
 	return msg
 }

@@ -71,7 +71,7 @@ type GameStateMsg struct {
 	Direction   int        `json:"direction"`
 	CurrentSeat int        `json:"currentSeat"`
 	PendingDraw int        `json:"pendingDraw"`
-	DrawnCardID *int       `json:"drawnCardId"`
+	DrawnCardID int        `json:"drawnCardId"` // -1 when there is none
 	DeckCount   int        `json:"deckCount"`
 	TurnMsLeft  int        `json:"turnMsLeft"`
 	StartsInMs  int        `json:"startsInMs,omitempty"` // only before the first turn

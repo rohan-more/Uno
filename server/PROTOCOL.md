@@ -110,7 +110,7 @@ reconnect, and in reply to `REQUEST_STATE`:
   "direction": 1,
   "currentSeat": 0,
   "pendingDraw": 0,
-  "drawnCardId": null,
+  "drawnCardId": -1,
   "deckCount": 79,
   "turnMsLeft": 8000,
   "startsInMs": 3000,
@@ -120,8 +120,8 @@ reconnect, and in reply to `REQUEST_STATE`:
 ```
 
 - `hand` is the receiver's own hand only; `you` is their seat.
-- `drawnCardId` is set only for the current player, after they drew a playable
-  card.
+- `drawnCardId` is the card the current player drew and may still play, or -1.
+  It is only ever sent to that player.
 - `place` is 0 while playing, else the finishing position.
 - `startsInMs` is only present before the first turn.
 - Timers are always **time remaining in milliseconds**, never a clock time, so
