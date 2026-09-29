@@ -27,6 +27,11 @@ public class DeckModel
 
     public int Count => cards.Count;
 
+    public void AddRange(IEnumerable<CardInstance> newCards)
+    {
+        cards.AddRange(newCards);
+    }
+
     // -------------------------------
     // ADDITIONS (for testing & rules)
     // -------------------------------

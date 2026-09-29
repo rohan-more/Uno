@@ -217,6 +217,14 @@ public class CardPlayResolver
         };
     }
 
+    public TurnAdvanceResult PassTurn(int playerIndex)
+    {
+        return new TurnAdvanceResult
+        {
+            NextPlayerIndex = AdvanceIndex(playerIndex)
+        };
+    }
+
     public void DrawCardForPlayer(int playerIndex)
     {
         var random = database.Cards[Random.Range(0, database.Cards.Count)];
@@ -239,12 +247,30 @@ public class CardPlayResolver
 
         for (int i = 0; i < count; i++)
         {
+            if (deck.Count == 0 && !RefillDeckFromDiscard())
+            {
+                Debug.LogWarning($"Deck and discard pile are empty, player {playerIndex} drew {drawn.Count}/{count}");
+                break;
+            }
+
             CardInstance card = deck.Draw(); // MUST come from deck
             players[playerIndex].State.Hand.Add(card);
             drawn.Add(card);
         }
 
         return drawn;
+    }
+
+    // Standard UNO: when the deck runs out, shuffle everything under the top discard back in
+    private bool RefillDeckFromDiscard()
+    {
+        var recycled = gameState.DiscardPile.TakeAllExceptTop();
+        if (recycled.Count == 0)
+            return false;
+
+        deck.AddRange(recycled);
+        deck.Shuffle(new System.Random());
+        return true;
     }
     
     public bool HasValidStackCard(PlayerState player)

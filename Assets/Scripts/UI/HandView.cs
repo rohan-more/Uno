@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
 public enum HandViewMode
 {
     Human,
-    BotDebug
+    BotDebug,
+    Opponent
 }
 
 public class HandView : MonoBehaviour
@@ -15,6 +17,12 @@ public class HandView : MonoBehaviour
     [SerializeField] private CurvedHandLayout layout;
     [SerializeField] private CardDatabase database;
     [SerializeField] private PlayerActionBus actionBus;
+
+    [Header("Opponent")]
+    [SerializeField] private Sprite cardBackSprite;
+    [SerializeField] private TMP_Text cardCountText;
+
+    public int CardCount => hand.Count;
 
     private readonly List<CardInstance> hand = new();
     private readonly List<CardItem> items = new();
@@ -92,9 +100,14 @@ public class HandView : MonoBehaviour
             var def = database.GetById(instance.CardId);
             var item = Instantiate(cardPrefab, transform);
 
-            item.Bind(instance, def.FrontSprite, actionBus, playerIndex: 0);
+            bool faceDown = mode == HandViewMode.Opponent;
+            item.Bind(instance, faceDown ? cardBackSprite : def.FrontSprite, actionBus, playerIndex: 0);
+            item.SetClickable(mode == HandViewMode.Human);
             items.Add(item);
         }
+
+        if (cardCountText != null)
+            cardCountText.text = hand.Count.ToString();
 
         Layout();
     }
