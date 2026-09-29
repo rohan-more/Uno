@@ -45,6 +45,10 @@ type MatchState struct {
 	phase string
 	seats [seatCount]seat
 
+	// skipLobby is set by the quick_match RPC: bots take every other seat and
+	// the game starts as soon as the first player joins. For testing.
+	skipLobby bool
+
 	ageTicks      int             // ticks since the match was created
 	everHadHuman  bool            // so a brand new lobby is not closed before anyone can join
 	game          *game.GameState // nil until the cards are dealt
@@ -72,8 +76,11 @@ type UnoMatch struct{}
 func (m *UnoMatch) MatchInit(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, params map[string]interface{}) (interface{}, int, string) {
 	matchID, _ := ctx.Value(runtime.RUNTIME_CTX_MATCH_ID).(string)
 
+	skipLobby, _ := params["skipLobby"].(bool)
+
 	state := &MatchState{
 		matchID:        matchID,
+		skipLobby:      skipLobby,
 		cfg:            LoadMatchConfig(ctx, logger, nk),
 		rng:            rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 		phase:          phaseLobby,
@@ -146,6 +153,9 @@ func (m *UnoMatch) MatchJoin(ctx context.Context, logger runtime.Logger, db *sql
 
 		if !s.countdownStarted() {
 			s.countdownTicks = s.cfg.LobbyCountdownMs / msPerTick
+		}
+		if s.skipLobby {
+			s.countdownTicks = 0 // the next tick fills the seats and deals
 		}
 		logger.WithField("seat", idx).WithField("name", name).Info("player seated")
 	}
@@ -772,7 +782,7 @@ func (s *MatchState) newBotSeat() seat {
 // label is what find_match searches over: open lobbies with room.
 func (s *MatchState) label() string {
 	open := 0
-	if s.phase == phaseLobby && s.freeSeat() >= 0 &&
+	if s.phase == phaseLobby && !s.skipLobby && s.freeSeat() >= 0 &&
 		(!s.countdownStarted() || s.countdownMsLeft() > s.cfg.JoinCutoffMs) {
 		open = 1
 	}

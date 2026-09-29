@@ -55,6 +55,9 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 	if err := initializer.RegisterRpc("current_match", rpcCurrentMatch); err != nil {
 		return err
 	}
+	if err := initializer.RegisterRpc("quick_match", rpcQuickMatch); err != nil {
+		return err
+	}
 	if err := initializer.RegisterRpc("reset_config", rpcResetConfig); err != nil {
 		return err
 	}

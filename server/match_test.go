@@ -160,3 +160,19 @@ func TestSanitizeConfig_SortsBotMarks(t *testing.T) {
 		}
 	}
 }
+
+func TestQuickMatch_IsNeverListedForMatchmaking(t *testing.T) {
+	s := newLobby()
+	s.skipLobby = true
+	s.addHuman(t, "solo")
+
+	var label struct {
+		Open int `json:"open"`
+	}
+	if err := json.Unmarshal([]byte(s.label()), &label); err != nil {
+		t.Fatal(err)
+	}
+	if label.Open != 0 {
+		t.Error("a quick match should never be offered to other players")
+	}
+}
