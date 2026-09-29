@@ -87,6 +87,14 @@ public class MatchPresenter : MonoBehaviour
             Connection.OnMatchState -= HandleMatchState;
     }
 
+    private async void Start()
+    {
+        // The snapshot that started this match was probably sent while the home
+        // screen was still loaded, so ask for a fresh one now.
+        if (Connection != null && !string.IsNullOrEmpty(Connection.CurrentMatchId))
+            await RequestStateAsync();
+    }
+
     private void Update()
     {
         if (_busy && waitForView && Time.time - _stepStarted > stepTimeout)
