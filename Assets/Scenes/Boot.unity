@@ -1683,6 +1683,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1067828770}
   - component: {fileID: 1067828769}
+  - component: {fileID: 1067828771}
   m_Layer: 0
   m_Name: Nakama
   m_TagString: Untagged
@@ -1706,6 +1707,9 @@ MonoBehaviour:
   host: 127.0.0.1
   port: 7450
   serverKey: defaultkey
+  multiInstanceProfiles: 1
+  maxProfiles: 8
+  instantMatch: 1
 --- !u!4 &1067828770
 Transform:
   m_ObjectHideFlags: 0
@@ -1721,6 +1725,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1067828771
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1067828768}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 69282e4a3565ecc4f8eed4769db816bd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  matchSceneName: MatchScene
+  homeSceneName: Boot
 --- !u!1 &1178450814
 GameObject:
   m_ObjectHideFlags: 0
@@ -2754,11 +2772,12 @@ MonoBehaviour:
     nameText: {fileID: 1938601445}
   - avatar: {fileID: 1654953030}
     nameText: {fileID: 790840555}
-  localSlotIndex: 2
   avatars: {fileID: 11400000, guid: 2c7f500e2d4f4bc0a499f218a3d5f5ed, type: 2}
   searchingLabel: "Searching\u2026"
   maxNameLength: 12
   cycleInterval: 0.08
+  listenToServer: 1
+  slotOrder: 02000000000000000100000003000000
   countdownText: {fileID: 1765052353}
   simulateForTesting: 0
 --- !u!224 &1999658172
