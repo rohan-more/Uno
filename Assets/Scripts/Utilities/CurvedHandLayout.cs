@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
 
-public class CurvedHandLayout : MonoBehaviour, IDragHandler
+public class CurvedHandLayout : HandLayout, IDragHandler
 {
     [Header("Curve Shape")]
     [SerializeField] private float radius = 700f;
@@ -30,7 +30,7 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
 
     private List<RectTransform> currentCards;
 
-    public void Layout(List<RectTransform> cards)
+    public override void Layout(List<RectTransform> cards)
     {
         int count = cards.Count;
         if (count == 0) return;

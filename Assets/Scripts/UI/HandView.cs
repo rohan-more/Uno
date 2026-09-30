@@ -14,7 +14,7 @@ public class HandView : MonoBehaviour
     [SerializeField] private HandViewMode mode;
     [SerializeField] private int ownerPlayerId;
     [SerializeField] private CardItem cardPrefab;
-    [SerializeField] private CurvedHandLayout layout;
+    [SerializeField] private HandLayout layout;
     [SerializeField] private CardDatabase database;
     [SerializeField] private PlayerActionBus actionBus;
 
