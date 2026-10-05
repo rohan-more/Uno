@@ -15,6 +15,7 @@ const (
 	OpGameState  int64 = 101
 	OpEvents     int64 = 102
 	OpError      int64 = 103
+	OpRemoved    int64 = 104
 )
 
 // Seat kinds as the client sees them.
@@ -108,6 +109,19 @@ type ErrorMsg struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// RemovedMsg (op 104) goes only to a player who just lost their seat, right
+// before they are kicked or the match closes, so their client can go home
+// instead of waiting for messages that will never come.
+type RemovedMsg struct {
+	Reason string `json:"reason"` // one of the Removed* reasons
+}
+
+// Why a player lost their seat.
+const (
+	RemovedMissedTurns  = "MISSED_TURNS"
+	RemovedDisconnected = "DISCONNECTED"
+)
 
 // Event type names, as sent to clients.
 const (

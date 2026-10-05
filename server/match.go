@@ -410,7 +410,7 @@ func (s *MatchState) tickAwaySeats(ctx context.Context, logger runtime.Logger, n
 
 		s.awayTicks[i]++
 		if s.awayTicks[i]*msPerTick >= s.cfg.DisconnectBotMs {
-			s.giveSeatToBot(ctx, logger, nk, dispatcher, i, "disconnected")
+			s.giveSeatToBot(ctx, logger, nk, dispatcher, i, RemovedDisconnected)
 		}
 	}
 }
@@ -437,7 +437,7 @@ func (s *MatchState) timeOutTurn(ctx context.Context, logger runtime.Logger, nk 
 
 	s.missedTurns[seat]++
 	if s.missedTurns[seat] >= s.cfg.MissedTurnsForBot {
-		s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, "missed turns")
+		s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, RemovedMissedTurns)
 	}
 }
 
@@ -496,6 +496,9 @@ func (s *MatchState) giveSeatToBot(ctx context.Context, logger runtime.Logger, n
 	if s.seats[seat].kind != KindHuman {
 		return
 	}
+
+	// Tell them first, while they are still in the match to receive it.
+	s.sendRemoved(logger, dispatcher, s.seats[seat].presence, reason)
 
 	// Nobody would be left watching, so end the match instead of handing the
 	// last seat to a bot and playing to an empty room.
@@ -654,6 +657,21 @@ func (s *MatchState) sendError(logger runtime.Logger, dispatcher runtime.MatchDi
 	}
 	if err := dispatcher.BroadcastMessage(OpError, data, []runtime.Presence{presence}, nil, true); err != nil {
 		logger.WithField("error", err.Error()).Warn("send error")
+	}
+}
+
+// sendRemoved tells a player they no longer have a seat. A disconnected
+// player has no presence and simply finds out on their next launch.
+func (s *MatchState) sendRemoved(logger runtime.Logger, dispatcher runtime.MatchDispatcher, presence runtime.Presence, reason string) {
+	if presence == nil {
+		return
+	}
+	data, err := json.Marshal(RemovedMsg{Reason: reason})
+	if err != nil {
+		return
+	}
+	if err := dispatcher.BroadcastMessage(OpRemoved, data, []runtime.Presence{presence}, nil, true); err != nil {
+		logger.WithField("error", err.Error()).Warn("send removed")
 	}
 }
 

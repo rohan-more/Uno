@@ -185,6 +185,20 @@ is chosen **before** sending, so a play is always one message.
 A well-behaved client never triggers these: it enables only playable cards, on
 its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
 
+**op 104 `REMOVED`** — to one player, the moment they lose their seat, just
+before they are kicked (or the match closes, if they were the last human):
+
+```json
+{ "reason": "MISSED_TURNS" }
+```
+
+| Reason | Cause |
+|---|---|
+| `MISSED_TURNS` | Ran out of time on 2 turns in a row |
+| `DISCONNECTED` | Gone longer than `disconnectBotMs`; usually never delivered, since they are offline |
+
+Nothing else follows. The client should say why and go back to the home screen.
+
 ## 7. Timers, timeouts and bots
 
 - **Turn timer: 8 s.** On timeout the server makes the safe move and never plays
@@ -202,6 +216,8 @@ its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
   - **2 missed turns in a row** (acting in time resets the counter), or
   - **15 s disconnected**, so a drop right after one's turn is noticed before the
     turn comes round again.
+- **The player is told first** with `REMOVED` (op 104), whichever way the seat
+  is lost.
 - **The last human leaving ends the match.** There is no point handing the final
   seat to a bot and playing to an empty room, so the match closes instead.
 - **Takeover is permanent.** The player never gets the seat back. Reconnecting

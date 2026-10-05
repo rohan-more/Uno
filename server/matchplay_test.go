@@ -103,6 +103,39 @@ func TestMissedTurns_HandSeatToBot(t *testing.T) {
 	if len(d.kicked) != 1 || d.kicked[0].GetUserId() != "u0" {
 		t.Errorf("replaced player should be kicked, kicked = %+v", d.kicked)
 	}
+	assertRemoved(t, d, "u0", RemovedMissedTurns)
+}
+
+func TestMissedTurns_LastHumanIsToldBeforeClose(t *testing.T) {
+	s := dealtMatch(t)
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	d := &fakeDispatcher{}
+	ctx, logger := context.Background(), testLogger{}
+
+	for tick := 0; tick < 2000 && !s.closeRequest; tick++ {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+
+	if !s.closeRequest {
+		t.Fatal("match should close when its only human misses their turns")
+	}
+	assertRemoved(t, d, "u0", RemovedMissedTurns)
+}
+
+// assertRemoved checks exactly one REMOVED went to userID, with the reason.
+func assertRemoved(t *testing.T, d *fakeDispatcher, userID, reason string) {
+	t.Helper()
+	got := d.removed()
+	if len(got) != 1 {
+		t.Fatalf("REMOVED messages = %d, want 1", len(got))
+	}
+	if len(got[0].to) != 1 || got[0].to[0].GetUserId() != userID {
+		t.Errorf("REMOVED went to %+v, want only %s", got[0].to, userID)
+	}
+	var msg RemovedMsg
+	if err := json.Unmarshal(got[0].data, &msg); err != nil || msg.Reason != reason {
+		t.Errorf("REMOVED = %s, want reason %s", got[0].data, reason)
+	}
 }
 
 func TestClientAction_IllegalCardIsRejected(t *testing.T) {

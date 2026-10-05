@@ -67,6 +67,17 @@ func (d *fakeDispatcher) MatchLabelUpdate(label string) error {
 }
 
 // events returns every event of this type the handler broadcast.
+// removed returns every REMOVED message and who it went to.
+func (d *fakeDispatcher) removed() []sentMessage {
+	var found []sentMessage
+	for _, msg := range d.sent {
+		if msg.opCode == OpRemoved {
+			found = append(found, msg)
+		}
+	}
+	return found
+}
+
 func (d *fakeDispatcher) events(eventType string) []EventMsg {
 	var found []EventMsg
 	for _, msg := range d.sent {
