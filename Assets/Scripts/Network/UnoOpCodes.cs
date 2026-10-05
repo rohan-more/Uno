@@ -15,4 +15,5 @@ public static class UnoOpCodes
     public const long GameState = 101;   // full personalized snapshot
     public const long Events = 102;      // what one action caused, in order
     public const long Error = 103;       // rejected action, sender only
+    public const long Removed = 104;     // you lost your seat, sender only
 }

@@ -55,6 +55,9 @@ public class MatchPresenter : MonoBehaviour
     /// <summary>The server rejected something we sent. Treat as a client bug.</summary>
     public event Action<MatchErrorMsg> OnError;
 
+    /// <summary>You lost your seat (see RemovedReasons). Nothing more will arrive.</summary>
+    public event Action<string> OnRemoved;
+
     [Header("Playback")]
     [Tooltip("Wait for the view to call StepComplete() before playing the next " +
              "event. Turn off to fire events back to back while building UI.")]
@@ -134,6 +137,14 @@ public class MatchPresenter : MonoBehaviour
                 Debug.LogWarning($"Server rejected an action: {error.code} - {error.message}");
                 OnError?.Invoke(error);
                 _ = RequestStateAsync(); // whatever we think is wrong, start again
+                break;
+
+            case UnoOpCodes.Removed:
+                var removed = JsonUtility.FromJson<MatchRemovedMsg>(json);
+                Debug.LogWarning($"Removed from the match: {removed?.reason}");
+                _pending.Clear(); // nothing queued matters any more
+                _busy = false;
+                OnRemoved?.Invoke(removed?.reason);
                 break;
         }
     }

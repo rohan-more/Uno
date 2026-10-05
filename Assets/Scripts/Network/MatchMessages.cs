@@ -85,6 +85,22 @@ public class MatchErrorMsg
     public string message;
 }
 
+/// <summary>
+/// Opcode 104: you no longer have a seat (a bot took it, or the match closed).
+/// Sent just before the server kicks you, so go home rather than wait.
+/// </summary>
+[Serializable]
+public class MatchRemovedMsg
+{
+    public string reason; // see RemovedReasons
+}
+
+public static class RemovedReasons
+{
+    public const string MissedTurns = "MISSED_TURNS";
+    public const string Disconnected = "DISCONNECTED";
+}
+
 /// <summary>Body of a PLAY_CARD message. Color is required for wild cards.</summary>
 [Serializable]
 public class PlayCardReq
