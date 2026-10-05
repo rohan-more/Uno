@@ -75,6 +75,26 @@ public class HandView : MonoBehaviour
     }
 
 
+    /// <summary>
+    /// Opponent hands: we only know how many cards they hold, so show that many backs.
+    /// </summary>
+    public void SetHiddenCount(int count)
+    {
+        hand.Clear();
+        for (int i = 0; i < count; i++)
+            hand.Add(new CardInstance(string.Empty));
+        Rebuild();
+    }
+
+    /// <summary>Outlines and lifts the cards the predicate allows, e.g. what the server would accept.</summary>
+    public void HighlightPlayable(System.Predicate<CardInstance> canPlay)
+    {
+        foreach (var item in items)
+            item.SetEligible(canPlay(item.Instance));
+
+        Layout();
+    }
+
     public void RemoveCard(CardInstance card)
     {
         hand.Remove(card);
@@ -101,7 +121,7 @@ public class HandView : MonoBehaviour
             var item = Instantiate(cardPrefab, transform);
 
             bool faceDown = mode == HandViewMode.Opponent;
-            item.Bind(instance, faceDown ? cardBackSprite : def.FrontSprite, actionBus, playerIndex: 0);
+            item.Bind(instance, faceDown ? cardBackSprite : def?.FrontSprite, actionBus, playerIndex: 0);
             item.SetClickable(mode == HandViewMode.Human);
             items.Add(item);
         }
