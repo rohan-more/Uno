@@ -66,6 +66,9 @@ public class MatchPresenter : MonoBehaviour
 
     [SerializeField] private CardDatabase database;
 
+    [Tooltip("Log every server event as it plays, to see where a match stalls.")]
+    [SerializeField] private bool logEvents = true;
+
     /// <summary>The table as this client understands it.</summary>
     public MatchState State { get; } = new MatchState();
 
@@ -99,7 +102,7 @@ public class MatchPresenter : MonoBehaviour
     {
         if (_busy && waitForView && Time.time - _stepStarted > stepTimeout)
         {
-            Debug.LogWarning("Match view never called StepComplete(); continuing");
+            Debug.LogWarning($"Match view never called StepComplete() within {stepTimeout}s; continuing");
             _busy = false;
         }
 
@@ -177,15 +180,21 @@ public class MatchPresenter : MonoBehaviour
         while (!_busy && _pending.Count > 0)
         {
             var e = _pending.Dequeue();
-            Apply(e);   // State is updated first, so views can read the result
-            Raise(e);
-
+            if (logEvents)
+                Debug.Log($"[MATCH] seq {State.Seq} {e.type} seat {e.seat}" +
+                          (e.card != null && !e.card.IsEmpty ? $" card {e.card.defId}" : "") +
+                          (e.type == UnoEventTypes.TurnChanged ? $" turnMs {e.turnMs} pending {e.pendingDraw}" : "") +
+                          $" ({_pending.Count} queued)");
+            // Mark busy before raising: a view that finishes straight away calls
+            // StepComplete() inside Raise, and that must not be overwritten after
             if (waitForView)
             {
                 _busy = true;
                 _stepStarted = Time.time;
-                return;
             }
+
+            Apply(e);   // State is updated first, so views can read the result
+            Raise(e);
         }
     }
 
