@@ -29,6 +29,10 @@ public class MatchSeatsView : MonoBehaviour
         [Tooltip("Optional: shown while it is this player's turn.")]
         public GameObject turnHighlight;
 
+        [Tooltip("Optional: a Filled (Radial 360) Image around the avatar. Shown on " +
+                 "this player's turn and drains as their time runs out.")]
+        public Image turnTimer;
+
         [Tooltip("Optional: shown when they finish, e.g. \"1st\".")]
         public TMP_Text placeText;
 
@@ -42,8 +46,21 @@ public class MatchSeatsView : MonoBehaviour
     [Tooltip("Seat panels in turn order: 0 is you, 1 is the player after you.")]
     [SerializeField] private SeatPanel[] panels = new SeatPanel[4];
 
+    [Header("Turn timer")]
+    [Tooltip("Turn length used when a snapshot arrives mid-turn and the full length isn't known. Match the server's TurnMs.")]
+    [SerializeField] private int defaultTurnMs = 8000;
+    [Tooltip("Ring colour from full (left) to empty (right).")]
+    [SerializeField] private Gradient timerColor = DefaultTimerColor();
+
     [SerializeField] private int maxNameLength = 12;
     [SerializeField] private float disconnectedAlpha = 0.5f;
+
+    private void Awake()
+    {
+        if (panels.Length == 0 || panels[0] == null || panels[0].seat != PlayerSeat.BottomPlayer)
+            Debug.LogWarning("MatchSeatsView: panel 0 must be your own seat (BottomPlayer); " +
+                             "every other panel is shifted by one otherwise", this);
+    }
 
     private void OnEnable()
     {
@@ -53,7 +70,7 @@ public class MatchSeatsView : MonoBehaviour
         presenter.OnSnapshot += HandleSnapshot;
         presenter.OnCardPlayed += _ => Refresh();
         presenter.OnCardsDrawn += _ => Refresh();
-        presenter.OnTurnStarted += _ => Refresh();
+        presenter.OnTurnStarted += HandleTurnStarted;
         presenter.OnPlayerFinished += (_, __) => Refresh();
         presenter.OnPlayerConnection += (_, __) => Refresh();
         presenter.OnSeatGivenToBot += _ => Refresh();
@@ -62,12 +79,84 @@ public class MatchSeatsView : MonoBehaviour
     private void OnDisable()
     {
         if (presenter != null)
+        {
             presenter.OnSnapshot -= HandleSnapshot;
+            presenter.OnTurnStarted -= HandleTurnStarted;
+        }
         // The lambdas above live as long as this object; disabling stops Refresh
         // from doing anything meaningful because the panels are inactive.
     }
 
-    private void HandleSnapshot(MatchState state) => Refresh();
+    // Whose turn the ring is showing, and when it runs out
+    private int timerSeat = -1;
+    private float timerTotal;
+    private float timerEndsAt;
+
+    private void HandleSnapshot(MatchState state)
+    {
+        // Mid-turn we only know what's left, so measure against the normal turn length
+        int total = state.TurnMsLeft > 0 ? Mathf.Max(defaultTurnMs, state.TurnMsLeft) : 0;
+        StartTimer(state.CurrentSeat, state.TurnMsLeft, total);
+        Refresh();
+    }
+
+    private void HandleTurnStarted(MatchPresenter.TurnStarted turn)
+    {
+        StartTimer(turn.Seat, turn.TurnMs, turn.TurnMs);
+        Refresh();
+    }
+
+    private void StartTimer(int seat, int msLeft, int msTotal)
+    {
+        timerSeat = seat;
+        timerTotal = msTotal / 1000f;
+        timerEndsAt = Time.time + msLeft / 1000f;
+    }
+
+    private void Update()
+    {
+        var state = presenter != null ? presenter.State : null;
+        if (state?.Seats == null || state.Seats.Length == 0)
+            return;
+
+        var active = state.IsOver ? null : PanelFor(state, timerSeat);
+        var seat = state.SeatAt(timerSeat);
+        if (seat != null && seat.HasFinished)
+            active = null;
+
+        // No countdown known (TurnMs 0): show a full ring so you still see whose turn it is
+        float fill = timerTotal > 0f ? Mathf.Clamp01((timerEndsAt - Time.time) / timerTotal) : 1f;
+
+        foreach (var panel in panels)
+        {
+            if (panel?.turnTimer == null)
+                continue;
+
+            bool show = panel == active;
+            if (panel.turnTimer.gameObject.activeSelf != show)
+                panel.turnTimer.gameObject.SetActive(show);
+
+            if (show)
+            {
+                panel.turnTimer.fillAmount = fill;
+                panel.turnTimer.color = timerColor.Evaluate(1f - fill);
+            }
+        }
+    }
+
+    private static Gradient DefaultTimerColor()
+    {
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(0.35f, 1f, 0.2f), 0f),
+                new GradientColorKey(new Color(1f, 0.85f, 0.1f), 0.6f),
+                new GradientColorKey(new Color(1f, 0.2f, 0.2f), 1f),
+            },
+            new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(1f, 1f) });
+        return gradient;
+    }
 
     /// <summary>Redraws every panel from the current state.</summary>
     public void Refresh()
