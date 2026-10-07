@@ -8,12 +8,14 @@ contract itself lives in [server/PROTOCOL.md](server/PROTOCOL.md).
 ```
 Unity client (C#)                    Nakama server (Go plugin)
 ──────────────────                   ─────────────────────────
-NakamaConnection  ──── HTTP/RPC ───▶ rpc.go        find_match, current_match
+NakamaConnection  ──── HTTP/RPC ───▶ rpc.go        find_match, quick_match,
+     │                                             current_match
      │            ──── socket  ───▶ match.go      one authoritative match
      │                                  │          per game, 4 fixed seats
-LobbyView / MatchmakingPanel ◀── LOBBY_STATE, GAME_STATE, EVENTS
-                                        │
-                                    game/         pure Uno rules, no Nakama
+LobbyView / MatchmakingPanel ◀── LOBBY_STATE      │
+MatchPresenter ──▶ MatchView ◀── GAME_STATE,    game/   pure Uno rules,
+               ──▶ MatchSeatsView   EVENTS, ERROR,       no Nakama
+                                    REMOVED
 ```
 
 **The server is authoritative.** The client sends intents ("play card 57") and
@@ -35,14 +37,12 @@ same code can drive bots or a simulator.
 | `game/deck.go` | Draw pile: build 108 cards, seeded shuffle, draw, refill from the discard pile |
 | `game/state.go` | `GameState`: seats, hands, discard, direction, pending draws, finishing places. Deals a new game |
 | `game/apply.go` | The rules. `Apply(seat, action)` validates a move, applies it and returns the events it caused |
+| `game/bot.go` | `BotAction`: the move a server-played seat makes. Placeholder logic: first legal card, most-held colour, otherwise draw, otherwise pass |
 | `config.go` | Tunable timings. Defaults in code, overridden by a storage object you can edit in the Nakama console; bad values fall back and are logged |
 | `messages.go` | Every wire type and opcode from PROTOCOL.md, in Go |
-| `match.go` | The authoritative match: seats, the lobby countdown, bots filling empty seats, label updates, LOBBY_STATE broadcasts |
-| `rpc.go` | `find_match` (list open lobbies, else create), `current_match` (which match you still hold a seat in), `reset_config` |
+| `match.go` | The authoritative match. Lobby: seats, countdown, bots filling empty seats, label updates. Play: deal, turn timer, client actions, bot turns, seat takeover (with `REMOVED` to the player), game over and closing |
+| `rpc.go` | `find_match` (list open lobbies, else create), `quick_match` (deal straight away against bots, for testing), `current_match` (which match you still hold a seat in), `reset_config` |
 | `data/cards.json` | The 108-card deck, shared with the Unity sprite ids |
-
-**Planned next:** the playing half of `match.go` (deal, turn timers, actions,
-bot takeover, game over) and `game/bot.go` (bot moves).
 
 ### Two ideas worth knowing
 
@@ -60,14 +60,39 @@ which makes bug reports reproducible.
 |---|---|
 | `Network/NakamaConnection.cs` | Owns the client, session and socket. Device login, saved session, account name and avatar, join/leave match, send actions, raises `OnMatchState` |
 | `Network/UnoOpCodes.cs` | The opcode numbers from `PROTOCOL.md`, so both sides agree |
+| `Network/LobbyMessages.cs`, `Network/MatchMessages.cs` | The JSON shapes from `PROTOCOL.md`, filled by `JsonUtility` |
+| `Network/MatchSceneLoader.cs` | Lives with `NakamaConnection`. Opens MatchScene when the first `GAME_STATE` arrives, and goes back to Boot |
+| `Network/MatchState.cs` | What this client believes the table looks like: your hand, seat counts, top card, whose turn. Built from a snapshot, mirrors the server's rules only to highlight cards |
+| `Network/MatchPresenter.cs` | Drives a networked match. Applies each server event to `MatchState`, then raises it for the views one at a time, waiting for `StepComplete()` so animations never overlap. Sends your plays, draws and passes. Resyncs on a gap or an error |
 | `UI/LobbyView.cs` | Home screen: shows name and avatar, Play and Exit buttons |
 | `UI/MatchmakingPanel.cs` | The 2×2 searching panel. Empty seats cycle avatars; a seat stops when the server says it's taken. Your seat is bottom-left and never scrolls |
 | `UI/ScreenFlow.cs` | Fades between the lobby and matchmaking panels via their CanvasGroups |
+| `UI/MatchView.cs` | Draws the match from `MatchPresenter`: hands, discard pile, draw deck, cards flying between them. Turns clicks into moves (asking for a wild's colour first), blocks double sends, shows your-turn cues and the "removed" screen |
+| `UI/MatchSeatsView.cs` | Seat nameplates: avatar, name, card count, the draining turn-timer ring, finishing place. Panel 0 is you, then the players after you in turn order |
+| `UI/HandView.cs` | One hand. Your cards face up and clickable, or an opponent's as a count of card backs. Laid out by a `HandLayout` |
+| `Utilities/CurvedHandLayout.cs` | Your hand: a scrollable arc, playable cards lifted |
+| `Utilities/OpponentFanLayout.cs` | An opponent's hand: a small fan of the newest few backs |
+| `UI/DrawPileView.cs` | The face-down deck, thinning as it runs low. Clicking it draws |
+| `UI/DiscardPileView.cs`, `UI/CardProxyView.cs` | The top discard, and the single card that flies between seats, deck and pile |
+| `Data/CardDatabase.cs` | Card definitions and sprites by id (`RED_5`), matching `server/data/cards.json` |
 | `Data/AvatarLibrary.cs` | ScriptableObject mapping the server's avatar index to a sprite |
 
-**Still single-player (to be replaced in Phase 3):** `UI/TestGameController.cs`,
-`Data/Rules/*`, `Data/DeckModel.cs`. These run the offline game today and go
-once the client plays through the server.
+**Offline leftovers, safe to delete:** `UI/TestGameController.cs`,
+`Data/Rules/*`, `Data/DeckModel.cs`, `Data/HumanDecisionMaker.cs`. They ran the
+single-player prototype; MatchScene keeps `TestGameController` disabled and
+nothing networked uses them.
+
+### Two ideas worth knowing on the client
+
+**State first, then the event.** The presenter updates `MatchState` before it
+raises an event, so a view never works anything out for itself: it redraws
+from `State`. Animations that need the "before" picture (a hand growing card by
+card) start from the final state and hide what hasn't landed yet.
+
+**One step at a time.** Server batches can hold several moves. Every event a
+view handles must end in exactly one `StepComplete()`, immediately or when its
+animation lands; otherwise the presenter waits out a 3 s timeout and the client
+falls behind the server's turn clock.
 
 ## How one match flows
 
@@ -92,7 +117,9 @@ once the client plays through the server.
    and changes nothing.
 6. **Absent players.** Each turn has 8 seconds; running out makes the safe move.
    Two missed turns, 15 seconds disconnected, or leaving outright hands the seat
-   to a bot for the rest of the match.
+   to a bot for the rest of the match. The player gets `REMOVED` first, and their
+   client explains why and goes home. If they were the last human, the match
+   closes instead.
 7. **End.** Emptying your hand gives you a finishing place and the others play
    on. When one player is left, `GAME_OVER` carries the ranking and the match
    closes shortly after.
