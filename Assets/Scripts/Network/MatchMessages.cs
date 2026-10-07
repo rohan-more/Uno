@@ -122,6 +122,7 @@ public static class UnoEventTypes
     public const string PlayerConnection = "PLAYER_CONNECTION";
     public const string PlayerFinished = "PLAYER_FINISHED";
     public const string GameOver = "GAME_OVER";
+    public const string TurnExtended = "TURN_EXTENDED";
 }
 
 /// <summary>Error codes. A well-behaved client should never see most of these.</summary>
@@ -137,6 +138,7 @@ public static class UnoErrorCodes
     public const string GameNotStarted = "GAME_NOT_STARTED";
     public const string GameOver = "GAME_OVER";
     public const string BadMessage = "BAD_MESSAGE";
+    public const string CannotExtend = "CANNOT_EXTEND";
 }
 
 /// <summary>Seat kinds.</summary>

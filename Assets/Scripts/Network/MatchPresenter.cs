@@ -51,6 +51,7 @@ public class MatchPresenter : MonoBehaviour
     public event Action<int, bool> OnPlayerConnection;
     public event Action<int, int> OnPlayerFinished; // seat, place
     public event Action<int[]> OnGameOver;          // seats in finishing order
+    public event Action<int, int> OnTurnExtended;   // seat, turnMs: their clock restarted
 
     /// <summary>The server rejected something we sent. Treat as a client bug.</summary>
     public event Action<MatchErrorMsg> OnError;
@@ -76,6 +77,13 @@ public class MatchPresenter : MonoBehaviour
     public MatchState State { get; } = new MatchState();
 
     private readonly Queue<MatchEventMsg> _pending = new Queue<MatchEventMsg>();
+    private readonly Queue<float> _arrivals = new Queue<float>(); // when each pending event arrived
+
+    // When the server's clock for the current turn runs out, by our clock. Timed
+    // from when messages arrived, not when they played, so queued animations
+    // can't make us think there's more time than there is.
+    private float _turnEndsAt;
+    private int _turnMs = 8000;
     private bool _busy;
     private float _stepStarted;
 
@@ -142,7 +150,7 @@ public class MatchPresenter : MonoBehaviour
             case UnoOpCodes.Removed:
                 var removed = JsonUtility.FromJson<MatchRemovedMsg>(json);
                 Debug.LogWarning($"Removed from the match: {removed?.reason}");
-                _pending.Clear(); // nothing queued matters any more
+                ClearPending(); // nothing queued matters any more
                 _busy = false;
                 OnRemoved?.Invoke(removed?.reason);
                 break;
@@ -154,10 +162,11 @@ public class MatchPresenter : MonoBehaviour
         if (msg == null)
             return;
 
-        _pending.Clear(); // anything queued is older than this snapshot
+        ClearPending(); // anything queued is older than this snapshot
         _busy = false;
 
         State.ApplySnapshot(msg);
+        _turnEndsAt = Time.time + msg.turnMsLeft / 1000f;
         OnSnapshot?.Invoke(State);
     }
 
@@ -174,14 +183,23 @@ public class MatchPresenter : MonoBehaviour
                 return; // a duplicate, safe to ignore
 
             Debug.LogWarning($"Missed events {State.Seq + 1}..{batch.seq - 1}; resyncing");
-            _pending.Clear();
+            ClearPending();
             _ = RequestStateAsync();
             return;
         }
 
         State.Seq = batch.seq;
         foreach (var e in batch.events)
+        {
             _pending.Enqueue(e);
+            _arrivals.Enqueue(Time.time);
+        }
+    }
+
+    private void ClearPending()
+    {
+        _pending.Clear();
+        _arrivals.Clear();
     }
 
     // ---- playback ----
@@ -191,6 +209,7 @@ public class MatchPresenter : MonoBehaviour
         while (!_busy && _pending.Count > 0)
         {
             var e = _pending.Dequeue();
+            float arrived = _arrivals.Dequeue();
             if (logEvents)
                 Debug.Log($"[MATCH] seq {State.Seq} {e.type} seat {e.seat}" +
                           (e.card != null && !e.card.IsEmpty ? $" card {e.card.defId}" : "") +
@@ -204,13 +223,13 @@ public class MatchPresenter : MonoBehaviour
                 _stepStarted = Time.time;
             }
 
-            Apply(e);   // State is updated first, so views can read the result
+            Apply(e, arrived);   // State is updated first, so views can read the result
             Raise(e);
         }
     }
 
     /// <summary>Updates MatchState for one event.</summary>
-    private void Apply(MatchEventMsg e)
+    private void Apply(MatchEventMsg e, float arrived)
     {
         var seat = State.SeatAt(e.seat);
 
@@ -248,10 +267,15 @@ public class MatchPresenter : MonoBehaviour
                             State.Hand.Add(card);
                     }
 
-                    // One card drawn and the turn hasn't moved on: it's ours to
-                    // play or pass. A TURN_CHANGED right after clears this.
-                    if (e.cards.Length == 1)
+                    // One card drawn and the turn stays with us: it's ours to play
+                    // or pass. If it can't be played the server ends the turn in
+                    // the same batch, so a TURN_CHANGED next means there's no choice.
+                    bool turnEndsNow = _pending.Count > 0 && _pending.Peek().type == UnoEventTypes.TurnChanged;
+                    if (e.cards.Length == 1 && !turnEndsNow)
+                    {
                         State.DrawnCardId = e.cards[0].id;
+                        _turnEndsAt = arrived + _turnMs / 1000f; // the server restarts the clock after a move
+                    }
                 }
                 State.DeckCount = Mathf.Max(0, State.DeckCount - e.count);
                 break;
@@ -265,6 +289,14 @@ public class MatchPresenter : MonoBehaviour
                 State.TurnMsLeft = e.turnMs;
                 State.PendingDraw = e.pendingDraw;
                 State.DrawnCardId = -1;
+                if (e.turnMs > 0)
+                    _turnMs = e.turnMs;
+                _turnEndsAt = arrived + _turnMs / 1000f;
+                break;
+
+            case UnoEventTypes.TurnExtended:
+                State.TurnMsLeft = e.turnMs;
+                _turnEndsAt = arrived + e.turnMs / 1000f;
                 break;
 
             case UnoEventTypes.SeatControl:
@@ -353,6 +385,10 @@ public class MatchPresenter : MonoBehaviour
                 OnGameOver?.Invoke(State.Ranking);
                 break;
 
+            case UnoEventTypes.TurnExtended:
+                OnTurnExtended?.Invoke(e.seat, e.turnMs);
+                break;
+
             default:
                 Debug.LogWarning($"Unknown event type from the server: {e.type}");
                 break;
@@ -390,6 +426,16 @@ public class MatchPresenter : MonoBehaviour
             await Connection.SendMatchStateAsync(UnoOpCodes.Pass);
     }
 
+    /// <summary>
+    /// Restarts your clock before choosing the colour of a wild you drew. The
+    /// server allows it once a turn, and only while holding a drawn wild.
+    /// </summary>
+    public async Task ExtendTurnAsync()
+    {
+        if (Connection != null)
+            await Connection.SendMatchStateAsync(UnoOpCodes.ExtendTurn);
+    }
+
     /// <summary>Asks for a fresh snapshot, e.g. after an error or a missed batch.</summary>
     public async Task RequestStateAsync()
     {
@@ -403,6 +449,12 @@ public class MatchPresenter : MonoBehaviour
     public bool CanPlay(CardInstance card) => State.CanPlay(card, database);
 
     public List<CardInstance> PlayableCards() => State.PlayableCards(database);
+
+    /// <summary>Seconds until the server's clock for the current turn runs out (our estimate, erring early).</summary>
+    public float SecondsLeftInTurn => Mathf.Max(0f, _turnEndsAt - Time.time);
+
+    /// <summary>A full turn, as the server last said.</summary>
+    public float TurnSeconds => _turnMs / 1000f;
 
     /// <summary>True while you drew a card that you may still play or pass on.</summary>
     public bool MustPlayDrawnOrPass => State.IsYourTurn && State.DrawnCardId >= 0;
