@@ -392,6 +392,13 @@ func (s *MatchState) tickPlaying(ctx context.Context, logger runtime.Logger, nk 
 		return
 	}
 
+	// Owing cards with nothing to stack on them leaves no choice, so take them
+	// now rather than make the player find the deck or wait out the clock.
+	if s.game.PendingDraw > 0 && len(s.game.PlayableCards(s.game.Current)) == 0 {
+		s.applyAction(logger, dispatcher, s.game.Current, game.Action{Type: game.DrawCard}, nil)
+		return
+	}
+
 	// A human seat runs out of time.
 	s.turnTicks--
 	if s.turnTicks <= 0 {

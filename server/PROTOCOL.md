@@ -201,6 +201,9 @@ Nothing else follows. The client should say why and go back to the home screen.
 
 ## 7. Timers, timeouts and bots
 
+- **Owing cards with nothing to stack** (a pending +2/+4 and no matching draw
+  card in hand): the server takes them for the player at once, after the
+  `turnGapMs` pause. There is no choice to wait for, and it is not a missed turn.
 - **Turn timer: 8 s.** On timeout the server makes the safe move and never plays
   a card: take a pending +2/+4, or draw one and pass.
 

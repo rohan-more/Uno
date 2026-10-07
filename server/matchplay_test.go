@@ -144,6 +144,42 @@ func TestMissedTurns_QuickMatchKeepsThePlayer(t *testing.T) {
 	}
 }
 
+func TestPendingDraw_TakenAtOnceWhenNothingStacks(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.seats[0].presence = fakePresence{userID: "u0"}
+
+	// Seat 0 owes 4 off a Wild Draw Four and holds nothing that stacks on it.
+	s.game.Current = 0
+	s.game.Discard = append(s.game.Discard, game.Card{ID: 901, DefID: "WILD_DRAW_FOUR"})
+	s.game.PendingDraw = 4
+	var hand []game.Card
+	for _, c := range s.game.Players[0].Hand {
+		if c.DefID != "WILD_DRAW_FOUR" {
+			hand = append(hand, c)
+		}
+	}
+	s.game.Players[0].Hand = hand
+	s.beginTurn()
+	before := len(hand)
+
+	d := &fakeDispatcher{}
+	ctx, logger := context.Background(), testLogger{}
+	for i := 0; i <= s.cfg.TurnGapMs/msPerTick; i++ {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+
+	if got := len(s.game.Players[0].Hand); got != before+4 {
+		t.Errorf("hand = %d, want %d: the owed cards should be taken straight away", got, before+4)
+	}
+	if s.game.Current == 0 {
+		t.Error("taking owed cards should end the turn")
+	}
+	if len(d.events(EvTurnTimedOut)) != 0 || s.missedTurns[0] != 0 {
+		t.Error("an automatic take is not a missed turn")
+	}
+}
+
 // assertRemoved checks exactly one REMOVED went to userID, with the reason.
 func assertRemoved(t *testing.T, d *fakeDispatcher, userID, reason string) {
 	t.Helper()
