@@ -112,6 +112,16 @@ func (d *fakeDispatcher) errors() []ErrorMsg {
 	return found
 }
 
+// hasError reports whether an ERROR with this code was sent.
+func (d *fakeDispatcher) hasError(code string) bool {
+	for _, e := range d.errors() {
+		if e.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *fakeDispatcher) count(opCode int64) int {
 	n := 0
 	for _, msg := range d.sent {

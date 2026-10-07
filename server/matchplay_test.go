@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/heroiclabs/nakama-common/runtime"
+
 	"github.com/rohan-more/Uno/server/game"
 )
 
@@ -177,6 +179,65 @@ func TestPendingDraw_TakenAtOnceWhenNothingStacks(t *testing.T) {
 	}
 	if len(d.events(EvTurnTimedOut)) != 0 || s.missedTurns[0] != 0 {
 		t.Error("an automatic take is not a missed turn")
+	}
+}
+
+// drewWild puts seat 0 on turn holding a freshly drawn wild it may play.
+func drewWild(t *testing.T) *MatchState {
+	t.Helper()
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.game.Current = 0
+	s.beginTurn()
+	card := game.Card{ID: 900, DefID: "WILD"}
+	s.game.Players[0].Hand = append(s.game.Players[0].Hand, card)
+	s.game.DrawnCard = &card
+	return s
+}
+
+func TestExtendTurn_AfterDrawingAWild(t *testing.T) {
+	s := drewWild(t)
+	presence := fakePresence{userID: "u0"}
+	s.seats[0].presence = presence
+	d := &fakeDispatcher{}
+	logger := testLogger{}
+
+	s.turnTicks = 3 // nearly out of time
+	s.handleMessages(logger, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
+
+	if s.turnTicks != s.cfg.TurnMs/msPerTick {
+		t.Errorf("turnTicks = %d, want a full turn of %d", s.turnTicks, s.cfg.TurnMs/msPerTick)
+	}
+	if got := d.events(EvTurnExtended); len(got) != 1 || got[0].Seat != 0 || got[0].TurnMs != s.cfg.TurnMs {
+		t.Errorf("TURN_EXTENDED events = %+v", got)
+	}
+
+	// A second extension in the same turn is refused and changes nothing.
+	s.turnTicks = 3
+	s.handleMessages(logger, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
+	if s.turnTicks != 3 {
+		t.Error("a second extension in one turn should be refused")
+	}
+	if !d.hasError(ErrCodeCannotExtend) {
+		t.Error("the second extension should get CANNOT_EXTEND")
+	}
+}
+
+func TestExtendTurn_RefusedWithoutADrawnWild(t *testing.T) {
+	s := drewWild(t)
+	s.game.DrawnCard = nil // nothing drawn
+	presence := fakePresence{userID: "u0"}
+	s.seats[0].presence = presence
+	d := &fakeDispatcher{}
+
+	s.turnTicks = 3
+	s.handleMessages(testLogger{}, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
+
+	if s.turnTicks != 3 || len(d.events(EvTurnExtended)) != 0 {
+		t.Error("extending without a drawn wild should change nothing")
+	}
+	if !d.hasError(ErrCodeCannotExtend) {
+		t.Error("want CANNOT_EXTEND")
 	}
 }
 

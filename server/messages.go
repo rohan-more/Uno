@@ -9,6 +9,7 @@ const (
 	OpDrawCard     int64 = 3
 	OpPass         int64 = 4
 	OpRequestState int64 = 5
+	OpExtendTurn   int64 = 6
 
 	// server -> client
 	OpLobbyState int64 = 100
@@ -135,6 +136,7 @@ const (
 	EvPlayerConnection = "PLAYER_CONNECTION"
 	EvPlayerFinished   = "PLAYER_FINISHED"
 	EvGameOver         = "GAME_OVER"
+	EvTurnExtended     = "TURN_EXTENDED"
 )
 
 // Error codes, as sent to clients.
@@ -150,6 +152,7 @@ const (
 	ErrCodeGameOver          = "GAME_OVER"
 	ErrCodeBadMessage        = "BAD_MESSAGE"
 	ErrCodeNotImplemented    = "NOT_IMPLEMENTED"
+	ErrCodeCannotExtend      = "CANNOT_EXTEND"
 )
 
 // ---------- client -> server ----------

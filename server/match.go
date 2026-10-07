@@ -56,6 +56,7 @@ type MatchState struct {
 	turnTicks     int             // ticks left in the current turn
 	botThinkTicks int             // pause before a bot plays, so moves are watchable
 	gapTicks      int             // pause after any move, so turns do not race past
+	turnExtended  bool            // EXTEND_TURN already used this turn
 	closeTicks    int             // ticks left before a finished match shuts down
 
 	missedTurns  [seatCount]int // consecutive timeouts, reset by acting in time
@@ -487,6 +488,7 @@ func (s *MatchState) beginTurn() {
 	s.turnTicks = s.cfg.TurnMs / msPerTick
 	s.botThinkTicks = s.cfg.BotThinkMs / msPerTick
 	s.gapTicks = s.cfg.TurnGapMs / msPerTick
+	s.turnExtended = false
 }
 
 func (s *MatchState) turnChangedEvent() EventMsg {
@@ -553,6 +555,9 @@ func (s *MatchState) handleMessages(logger runtime.Logger, dispatcher runtime.Ma
 
 		case OpPlayCard, OpDrawCard, OpPass:
 			s.handleAction(logger, dispatcher, seat, m)
+
+		case OpExtendTurn:
+			s.handleExtendTurn(logger, dispatcher, seat, m)
 
 		default:
 			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, "unknown opcode")
@@ -878,6 +883,29 @@ func (s *MatchState) handleAction(logger runtime.Logger, dispatcher runtime.Matc
 
 	s.missedTurns[seat] = 0 // they are clearly still here
 	s.afterAction(logger, dispatcher, seat, events, nil)
+}
+
+// handleExtendTurn restarts the clock for a player who drew a wild and chose to
+// play it, so picking its colour gets a full turn of its own. Once per turn,
+// and only in that spot, so it can't be used to stall.
+func (s *MatchState) handleExtendTurn(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int, m runtime.MatchData) {
+	if s.phase != phasePlaying || s.game == nil || s.preMatchTicks > 0 || s.game.Over() {
+		s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "no turn to extend")
+		return
+	}
+	if seat != s.game.Current {
+		s.sendError(logger, dispatcher, m, ErrCodeNotYourTurn, "not your turn")
+		return
+	}
+	if s.turnExtended || !s.game.DrawnCardIsWild() {
+		s.sendError(logger, dispatcher, m, ErrCodeCannotExtend, "only once, after drawing a wild you mean to play")
+		return
+	}
+
+	s.turnExtended = true
+	s.turnTicks = s.cfg.TurnMs / msPerTick
+	s.missedTurns[seat] = 0
+	s.broadcastEvents(logger, dispatcher, []EventMsg{{Type: EvTurnExtended, Seat: seat, TurnMs: s.cfg.TurnMs}})
 }
 
 // parseAction turns one match message into a rules action.

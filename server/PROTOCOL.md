@@ -135,9 +135,17 @@ reconnect, and in reply to `REQUEST_STATE`:
 | 3 | `DRAW_CARD` | `{}` | Your turn, not yet drawn. Also how a pending +2/+4 is taken |
 | 4 | `PASS` | `{}` | Your turn, after drawing a playable card |
 | 5 | `REQUEST_STATE` | `{}` | Any time; the server replies with `GAME_STATE` |
+| 6 | `EXTEND_TURN` | `{}` | Your turn, holding a drawn **wild** you are about to play, once per turn. Restarts your clock so choosing its color gets a full turn |
 
 There is no start action: the countdown starts the match. The color for a wild
 is chosen **before** sending, so a play is always one message.
+
+**Choosing in time.** Clients run their own countdown on every choice popup
+(play or keep a drawn card; pick a wild's color), set a little under the
+server's remaining time so the client answers first. Out of time on play-or-keep
+means keep (`PASS`); out of time on a color means a random color. Picking the
+color for a drawn wild is a second choice in the same turn, so the client sends
+`EXTEND_TURN` first and gets a fresh clock for it.
 
 ## 6. Server → client
 
@@ -156,7 +164,8 @@ is chosen **before** sending, so a play is always one message.
 | `CARDS_DRAWN` | `seat, count, cards` | **`cards` only goes to the drawer**; others get `count` |
 | `PLAYER_SKIPPED` | `seat` | Sent with a Skip, so the client can animate it |
 | `DIRECTION_CHANGED` | `direction` | `1` or `-1` |
-| `TURN_CHANGED` | `seat, turnMs, pendingDraw` | `turnMs` is 0 for a bot seat (no countdown ring) |
+| `TURN_CHANGED` | `seat, turnMs, pendingDraw` | `turnMs` is the full turn length, for bots too (they act after `botThinkMs`) |
+| `TURN_EXTENDED` | `seat, turnMs` | `EXTEND_TURN` was accepted: that seat's clock restarts at `turnMs` |
 | `TURN_TIMED_OUT` | `seat` | Precedes the automatic draw's events |
 | `SEAT_CONTROL` | `seat, kind` | Only ever `human` → `bot`; permanent |
 | `PLAYER_CONNECTION` | `seat, connected` | Grey out the nameplate |
@@ -181,6 +190,7 @@ is chosen **before** sending, so a play is always one message.
 | `GAME_NOT_STARTED` / `GAME_OVER` | Action outside the playing phase |
 | `SEAT_TAKEN_BY_BOT` | Rejoined after being replaced |
 | `BAD_MESSAGE` | Unknown opcode or unreadable JSON |
+| `CANNOT_EXTEND` | `EXTEND_TURN` twice in a turn, or without a drawn wild |
 
 A well-behaved client never triggers these: it enables only playable cards, on
 its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
