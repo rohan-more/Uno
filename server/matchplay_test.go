@@ -122,6 +122,28 @@ func TestMissedTurns_LastHumanIsToldBeforeClose(t *testing.T) {
 	assertRemoved(t, d, "u0", RemovedMissedTurns)
 }
 
+func TestMissedTurns_QuickMatchKeepsThePlayer(t *testing.T) {
+	s := dealtMatch(t)
+	s.skipLobby = true // what quick_match sets
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	d := &fakeDispatcher{}
+	ctx, logger := context.Background(), testLogger{}
+
+	for tick := 0; tick < 2000; tick++ {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+
+	if s.missedTurns[0] < s.cfg.MissedTurnsForBot {
+		t.Fatalf("missedTurns = %d, the test should have run past the limit", s.missedTurns[0])
+	}
+	if s.seats[0].kind != KindHuman || s.closeRequest {
+		t.Error("a quick match should keep an idle player seated and the match open")
+	}
+	if got := d.removed(); len(got) != 0 {
+		t.Errorf("REMOVED sent %d times in a quick match", len(got))
+	}
+}
+
 // assertRemoved checks exactly one REMOVED went to userID, with the reason.
 func assertRemoved(t *testing.T, d *fakeDispatcher, userID, reason string) {
 	t.Helper()

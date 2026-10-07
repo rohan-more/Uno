@@ -216,6 +216,8 @@ Nothing else follows. The client should say why and go back to the home screen.
   - **2 missed turns in a row** (acting in time resets the counter), or
   - **15 s disconnected**, so a drop right after one's turn is noticed before the
     turn comes round again.
+  - Quick matches (`quick_match`, for testing) skip the missed-turns rule: an
+    idle player keeps timing out but keeps their seat.
 - **The player is told first** with `REMOVED` (op 104), whichever way the seat
   is lost.
 - **The last human leaving ends the match.** There is no point handing the final

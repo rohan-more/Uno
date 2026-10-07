@@ -436,7 +436,8 @@ func (s *MatchState) timeOutTurn(ctx context.Context, logger runtime.Logger, nk 
 	}
 
 	s.missedTurns[seat]++
-	if s.missedTurns[seat] >= s.cfg.MissedTurnsForBot {
+	// Quick matches are for testing the client: sitting idle shouldn't end them.
+	if !s.skipLobby && s.missedTurns[seat] >= s.cfg.MissedTurnsForBot {
 		s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, RemovedMissedTurns)
 	}
 }
