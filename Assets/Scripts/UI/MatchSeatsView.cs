@@ -47,8 +47,6 @@ public class MatchSeatsView : MonoBehaviour
     [SerializeField] private SeatPanel[] panels = new SeatPanel[4];
 
     [Header("Turn timer")]
-    [Tooltip("Turn length used when a snapshot arrives mid-turn and the full length isn't known. Match the server's TurnMs.")]
-    [SerializeField] private int defaultTurnMs = 8000;
     [Tooltip("Ring colour from full (left) to empty (right).")]
     [SerializeField] private Gradient timerColor = DefaultTimerColor();
 
@@ -69,7 +67,7 @@ public class MatchSeatsView : MonoBehaviour
 
         presenter.OnSnapshot += HandleSnapshot;
         presenter.OnCardPlayed += _ => Refresh();
-        presenter.OnCardsDrawn += _ => Refresh();
+        presenter.OnCardsDrawn += HandleCardsDrawn;
         presenter.OnTurnStarted += HandleTurnStarted;
         presenter.OnPlayerFinished += (_, __) => Refresh();
         presenter.OnPlayerConnection += (_, __) => Refresh();
@@ -82,50 +80,34 @@ public class MatchSeatsView : MonoBehaviour
         {
             presenter.OnSnapshot -= HandleSnapshot;
             presenter.OnTurnStarted -= HandleTurnStarted;
+            presenter.OnCardsDrawn -= HandleCardsDrawn;
         }
         // The lambdas above live as long as this object; disabling stops Refresh
         // from doing anything meaningful because the panels are inactive.
     }
 
-    // Whose turn the ring is showing, and when it runs out
-    private int timerSeat = -1;
-    private float timerTotal;
-    private float timerEndsAt;
+    private void HandleSnapshot(MatchState state) => Refresh();
 
-    private void HandleSnapshot(MatchState state)
-    {
-        // Mid-turn we only know what's left, so measure against the normal turn length
-        int total = state.TurnMsLeft > 0 ? Mathf.Max(defaultTurnMs, state.TurnMsLeft) : 0;
-        StartTimer(state.CurrentSeat, state.TurnMsLeft, total);
-        Refresh();
-    }
+    private void HandleTurnStarted(MatchPresenter.TurnStarted turn) => Refresh();
 
-    private void HandleTurnStarted(MatchPresenter.TurnStarted turn)
-    {
-        StartTimer(turn.Seat, turn.TurnMs, turn.TurnMs);
-        Refresh();
-    }
+    private void HandleCardsDrawn(MatchPresenter.CardsDrawn drawn) => Refresh();
 
-    private void StartTimer(int seat, int msLeft, int msTotal)
-    {
-        timerSeat = seat;
-        timerTotal = msTotal / 1000f;
-        timerEndsAt = Time.time + msLeft / 1000f;
-    }
-
+    // The ring reads the presenter's estimate of the server's clock, the same one
+    // the choice popups count down from, so they always agree. It restarts on a
+    // new turn, a playable draw and an extended turn.
     private void Update()
     {
         var state = presenter != null ? presenter.State : null;
         if (state?.Seats == null || state.Seats.Length == 0)
             return;
 
-        var active = state.IsOver ? null : PanelFor(state, timerSeat);
-        var seat = state.SeatAt(timerSeat);
+        var active = state.IsOver ? null : PanelFor(state, state.CurrentSeat);
+        var seat = state.SeatAt(state.CurrentSeat);
         if (seat != null && seat.HasFinished)
             active = null;
 
-        // No countdown known (TurnMs 0): show a full ring so you still see whose turn it is
-        float fill = timerTotal > 0f ? Mathf.Clamp01((timerEndsAt - Time.time) / timerTotal) : 1f;
+        float total = presenter.TurnSeconds;
+        float fill = total > 0f ? Mathf.Clamp01(presenter.SecondsLeftInTurn / total) : 1f;
 
         foreach (var panel in panels)
         {
