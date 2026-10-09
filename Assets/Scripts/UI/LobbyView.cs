@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -23,6 +24,11 @@ public class LobbyView : MonoBehaviour
     [SerializeField] private Button cancelButton;
     [SerializeField] private TMP_Text statusText;
 
+    [Tooltip("The Play button's label. Shows the reconnect text while a match is in progress. " +
+             "Found on the button if left empty.")]
+    [SerializeField] private TMP_Text playLabel;
+    [SerializeField] private string reconnectText = "REJOIN MATCH";
+
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
 
@@ -37,7 +43,10 @@ public class LobbyView : MonoBehaviour
             cancelButton.onClick.AddListener(OnCancelClicked);
 
         if (Connection != null)
+        {
             Connection.OnDisconnected += OnDisconnected;
+            Connection.OnReconnected += OnReconnected;
+        }
     }
 
     private void OnDisable()
@@ -49,7 +58,10 @@ public class LobbyView : MonoBehaviour
             cancelButton.onClick.RemoveListener(OnCancelClicked);
 
         if (Connection != null)
+        {
             Connection.OnDisconnected -= OnDisconnected;
+            Connection.OnReconnected -= OnReconnected;
+        }
     }
 
     private async void Start()
@@ -74,6 +86,24 @@ public class LobbyView : MonoBehaviour
         ShowProfile();
         SetStatus("");
         SetInteractable(true);
+        await CheckMatchInProgressAsync();
+    }
+
+    // A match we still hold a seat in, if any: Play turns into Reconnect.
+    private string matchInProgress;
+    private string playText;
+
+    private async Task CheckMatchInProgressAsync()
+    {
+        matchInProgress = await Connection.MatchInProgressAsync();
+        if (playLabel == null)
+            playLabel = playButton.GetComponentInChildren<TMP_Text>();
+        if (playLabel != null)
+        {
+            playText ??= playLabel.text;
+            playLabel.text = matchInProgress != null ? reconnectText : playText;
+        }
+        SetStatus(matchInProgress != null ? "You have a match in progress" : "");
     }
 
     /// <summary>Fills in the name and avatar the server gave this account.</summary>
@@ -97,6 +127,19 @@ public class LobbyView : MonoBehaviour
 
     private async void OnPlayClicked()
     {
+        if (matchInProgress != null)
+        {
+            SetInteractable(false);
+            SetStatus("Rejoining\u2026");
+            // On success the server's GAME_STATE opens the match scene
+            if (!await Connection.JoinMatchAsync(matchInProgress))
+            {
+                await CheckMatchInProgressAsync(); // it ended meanwhile: back to Find Match
+                SetInteractable(true);
+            }
+            return;
+        }
+
         SetInteractable(false);
         ShowSearching(true);
         SetStatus("Finding a match…");
@@ -136,7 +179,14 @@ public class LobbyView : MonoBehaviour
     {
         ShowSearching(false);
         SetInteractable(false);
-        SetStatus("Disconnected. Restart to reconnect.");
+        SetStatus("Connection lost. Reconnecting\u2026");
+    }
+
+    private async void OnReconnected()
+    {
+        SetInteractable(true);
+        SetStatus("");
+        await CheckMatchInProgressAsync();
     }
 
     private void SetInteractable(bool value)

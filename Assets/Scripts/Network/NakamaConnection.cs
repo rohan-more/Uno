@@ -50,8 +50,14 @@ public class NakamaConnection : MonoBehaviour
     /// <summary>Raised after a successful ConnectAsync, on the main thread.</summary>
     public event Action OnConnected;
 
-    /// <summary>Raised when the socket drops, with the reason the server gave.</summary>
+    /// <summary>Raised when the socket drops, with the reason the server gave. Reconnecting starts at once.</summary>
     public event Action<string> OnDisconnected;
+
+    /// <summary>Raised when a dropped socket is back. Rejoining the match follows on its own.</summary>
+    public event Action OnReconnected;
+
+    /// <summary>Raised after reconnecting when the match we dropped out of can't be rejoined: it ended, or our seat is gone.</summary>
+    public event Action OnMatchLost;
 
     /// <summary>
     /// Raised for every match message: the opcode (see UnoOpCodes) and the JSON
@@ -61,6 +67,18 @@ public class NakamaConnection : MonoBehaviour
 
     /// <summary>The match this client is in, or null.</summary>
     public string CurrentMatchId { get; private set; }
+
+    /// <summary>True from a dropped socket until it is connected again.</summary>
+    public bool IsReconnecting { get; private set; }
+
+    // The match to go back to after a drop. Cleared by leaving on purpose.
+    private string _rejoinMatchId;
+
+    // Set while the app is closing, so the socket closing doesn't trigger a reconnect.
+    private bool _shuttingDown;
+
+    // Seconds between reconnect attempts; the last one repeats.
+    private static readonly float[] ReconnectDelays = { 1f, 2f, 4f, 8f, 10f };
 
     private const string DeviceIdKey = "uno.deviceId";
     private const string AuthTokenKey = "uno.authToken";
@@ -107,10 +125,7 @@ public class NakamaConnection : MonoBehaviour
 
             // useMainThread: true makes the package raise socket events on Unity's
             // main thread, so handlers can touch the UI directly.
-            _socket = _client.NewSocket(useMainThread: true);
-            _socket.Closed += HandleSocketClosed;
-            _socket.ReceivedMatchState += HandleMatchState;
-            await _socket.ConnectAsync(_session);
+            await OpenSocketAsync();
 
             var account = await _client.GetAccountAsync(_session);
             DisplayName = account.User.DisplayName;
@@ -313,6 +328,7 @@ public class NakamaConnection : MonoBehaviour
         {
             var match = await _socket.JoinMatchAsync(matchId);
             CurrentMatchId = match.Id;
+            _rejoinMatchId = match.Id;
             return true;
         }
         catch (Exception e)
@@ -330,6 +346,7 @@ public class NakamaConnection : MonoBehaviour
 
         var matchId = CurrentMatchId;
         CurrentMatchId = null;
+        _rejoinMatchId = null; // leaving on purpose: don't come back here after a drop
 
         try
         {
@@ -364,11 +381,116 @@ public class NakamaConnection : MonoBehaviour
 
     // ---------- connection lifecycle ----------
 
+    private async Task OpenSocketAsync()
+    {
+        if (_socket != null)
+        {
+            _socket.Closed -= HandleSocketClosed;
+            _socket.ReceivedMatchState -= HandleMatchState;
+        }
+
+        // useMainThread: true makes the package raise socket events on Unity's
+        // main thread, so handlers can touch the UI directly.
+        _socket = _client.NewSocket(useMainThread: true);
+        _socket.Closed += HandleSocketClosed;
+        _socket.ReceivedMatchState += HandleMatchState;
+        await _socket.ConnectAsync(_session);
+    }
+
     private void HandleSocketClosed(string reason)
     {
         Debug.LogWarning($"Nakama socket closed: {reason}");
-        CurrentMatchId = null;
+        CurrentMatchId = null; // _rejoinMatchId remembers where we were
         OnDisconnected?.Invoke(reason);
+
+        if (!_shuttingDown && !IsReconnecting)
+            ReconnectLoop();
+    }
+
+    /// <summary>
+    /// Keeps trying to reopen the socket after a drop, backing off a little each
+    /// time, then rejoins the match we were in. The server holds our seat until
+    /// we miss 3 turns, so there's time.
+    /// </summary>
+    private async void ReconnectLoop()
+    {
+        IsReconnecting = true;
+        for (int attempt = 0; !_shuttingDown; attempt++)
+        {
+            float delay = ReconnectDelays[Mathf.Min(attempt, ReconnectDelays.Length - 1)];
+            await Task.Delay(TimeSpan.FromSeconds(delay));
+            if (_shuttingDown)
+                break;
+
+            try
+            {
+                if (_session == null || _session.HasExpired(DateTime.UtcNow.AddMinutes(1)))
+                {
+                    _session = await RestoreOrAuthenticateAsync();
+                    SaveSession(_session);
+                }
+
+                await OpenSocketAsync();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Reconnect attempt {attempt + 1} failed: {e.Message}");
+                continue;
+            }
+
+            Debug.Log($"Reconnected after {attempt + 1} attempt(s)");
+            IsReconnecting = false;
+            OnReconnected?.Invoke();
+
+            // Back to the match we dropped out of; if it's gone (or our seat
+            // went to a bot), ask the server where we stand.
+            var matchId = _rejoinMatchId;
+            if (string.IsNullOrEmpty(matchId) || !await JoinMatchAsync(matchId))
+            {
+                _rejoinMatchId = null;
+                if (!await RejoinMatchInProgressAsync() && !string.IsNullOrEmpty(matchId))
+                    OnMatchLost?.Invoke();
+            }
+            return;
+        }
+        IsReconnecting = false;
+    }
+
+    /// <summary>
+    /// The match being played that we still hold a seat in, or null. Joining it
+    /// gets a fresh GAME_STATE, which opens the match scene (see MatchSceneLoader).
+    /// </summary>
+    public async Task<string> MatchInProgressAsync()
+    {
+        try
+        {
+            var response = await RpcAsync("current_match");
+            var current = JsonUtility.FromJson<CurrentMatchResponse>(response.Payload);
+            if (current == null || string.IsNullOrEmpty(current.matchId) || current.phase != "playing")
+                return null;
+            return current.matchId;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"Checking for a match in progress failed: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Rejoins the match in progress, if there is one. Returns true if we're back in it.</summary>
+    public async Task<bool> RejoinMatchInProgressAsync()
+    {
+        var matchId = await MatchInProgressAsync();
+        if (matchId == null)
+            return false;
+
+        Debug.Log($"Rejoining match in progress {matchId}");
+        return await JoinMatchAsync(matchId);
+    }
+
+    private void OnApplicationQuit()
+    {
+        _shuttingDown = true;
     }
 
     [Serializable]
@@ -377,8 +499,16 @@ public class NakamaConnection : MonoBehaviour
         public string matchId;
     }
 
+    [Serializable]
+    private class CurrentMatchResponse
+    {
+        public string matchId;
+        public string phase; // "lobby" | "playing" | "done"
+    }
+
     private async void OnDestroy()
     {
+        _shuttingDown = true;
         if (_socket != null)
         {
             _socket.Closed -= HandleSocketClosed;
