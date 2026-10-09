@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using UnityEngine.EventSystems;
 
-public class CurvedHandLayout : MonoBehaviour, IDragHandler
+public class CurvedHandLayout : HandLayout, IDragHandler
 {
     [Header("Curve Shape")]
     [SerializeField] private float radius = 700f;
@@ -14,6 +14,14 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
     private float verticalOffsetMultiplier = 0.35f;
     [SerializeField] private float horizontalOffset = 0f;
     [SerializeField] private float eligibleLift = 30f;
+
+    [Header("Card Size")]
+    [SerializeField] private float cardScale = 1f;
+
+    [Header("Fitting")]
+    [Tooltip("Squeeze the spacing so every card fits inside Max Visible Angle (for opponent hands that can't scroll).")]
+    [SerializeField] private bool fitAllCards;
+
     [Header("Scrolling")]
     [SerializeField] private float scrollSensitivity = 0.05f;
 
@@ -22,7 +30,7 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
 
     private List<RectTransform> currentCards;
 
-    public void Layout(List<RectTransform> cards)
+    public override void Layout(List<RectTransform> cards)
     {
         int count = cards.Count;
         if (count == 0) return;
@@ -36,8 +44,10 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
             lastCardCount = count;
         }
 
+        float spacing = GetSpacing(count);
+
         // Total angular span of the hand
-        float totalAngle = (count - 1) * minSpacingAngle;
+        float totalAngle = (count - 1) * spacing;
 
         // Visible window
         float visibleAngle = Mathf.Min(totalAngle, maxVisibleAngle);
@@ -52,15 +62,19 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
 
         Vector2 circleCenter = new Vector2(0f, -radius);
 
-        float cardHeight = cards[0].rect.height;
+        float cardHeight = cards[0].rect.height * cardScale;
         float verticalOffset = cardHeight * verticalOffsetMultiplier;
 
         for (int i = 0; i < count; i++)
         {
             RectTransform card = cards[i];
             var item = card.GetComponent<CardItem>();
-            
-            float angle = startAngle + i * minSpacingAngle;
+
+            // Position relative to the hand's center, whatever the prefab's anchors are
+            card.anchorMin = card.anchorMax = card.pivot = new Vector2(0.5f, 0.5f);
+            card.localScale = Vector3.one * cardScale;
+
+            float angle = startAngle + i * spacing;
             float rad = angle * Mathf.Deg2Rad;
 
             float x = Mathf.Sin(rad) * radius;
@@ -87,11 +101,19 @@ public class CurvedHandLayout : MonoBehaviour, IDragHandler
         Layout(currentCards);
     }
 
+    private float GetSpacing(int count)
+    {
+        if (!fitAllCards || count <= 1)
+            return minSpacingAngle;
+
+        return Mathf.Min(minSpacingAngle, maxVisibleAngle / (count - 1));
+    }
+
     private void ClampScroll()
     {
         int count = currentCards.Count;
 
-        float totalAngle = (count - 1) * minSpacingAngle;
+        float totalAngle = (count - 1) * GetSpacing(count);
         float visibleAngle = Mathf.Min(totalAngle, maxVisibleAngle);
 
         float maxScroll = Mathf.Max(0f, totalAngle - visibleAngle);

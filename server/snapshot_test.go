@@ -92,8 +92,8 @@ func TestBuildGameState_TableFacts(t *testing.T) {
 	if msg.TurnMsLeft != 0 {
 		t.Errorf("turnMsLeft = %d before the first turn, want 0", msg.TurnMsLeft)
 	}
-	if msg.DrawnCardID != nil {
-		t.Errorf("drawnCardId = %v at the start, want nil", *msg.DrawnCardID)
+	if msg.DrawnCardID != -1 {
+		t.Errorf("drawnCardId = %d at the start, want -1", msg.DrawnCardID)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"math/rand/v2"
 	"time"
 
@@ -44,11 +45,23 @@ type MatchState struct {
 	phase string
 	seats [seatCount]seat
 
+	// skipLobby is set by the quick_match RPC: bots take every other seat and
+	// the game starts as soon as the first player joins. For testing.
+	skipLobby bool
+
 	ageTicks      int             // ticks since the match was created
 	everHadHuman  bool            // so a brand new lobby is not closed before anyone can join
 	game          *game.GameState // nil until the cards are dealt
 	preMatchTicks int             // dealt table shown before the first turn
 	turnTicks     int             // ticks left in the current turn
+	botThinkTicks int             // pause before a bot plays, so moves are watchable
+	gapTicks      int             // pause after any move, so turns do not race past
+	turnExtended  bool            // EXTEND_TURN already used this turn
+	closeTicks    int             // ticks left before a finished match shuts down
+
+	missedTurns  [seatCount]int // consecutive timeouts, reset by acting in time
+	awayTicks    [seatCount]int // how long a human seat has been disconnected
+	closeRequest bool           // set when the match should end on this tick
 
 	countdownTicks int  // ticks left in the lobby; -1 until the first player joins
 	nextBotMark    int  // index into cfg.BotJoinAtMsLeft
@@ -64,8 +77,11 @@ type UnoMatch struct{}
 func (m *UnoMatch) MatchInit(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, params map[string]interface{}) (interface{}, int, string) {
 	matchID, _ := ctx.Value(runtime.RUNTIME_CTX_MATCH_ID).(string)
 
+	skipLobby, _ := params["skipLobby"].(bool)
+
 	state := &MatchState{
 		matchID:        matchID,
+		skipLobby:      skipLobby,
 		cfg:            LoadMatchConfig(ctx, logger, nk),
 		rng:            rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 		phase:          phaseLobby,
@@ -139,6 +155,9 @@ func (m *UnoMatch) MatchJoin(ctx context.Context, logger runtime.Logger, db *sql
 		if !s.countdownStarted() {
 			s.countdownTicks = s.cfg.LobbyCountdownMs / msPerTick
 		}
+		if s.skipLobby {
+			s.countdownTicks = 0 // the next tick fills the seats and deals
+		}
 		logger.WithField("seat", idx).WithField("name", name).Info("player seated")
 	}
 
@@ -209,8 +228,13 @@ func (m *UnoMatch) MatchLoop(ctx context.Context, logger runtime.Logger, db *sql
 
 	if s.phase == phaseLobby {
 		s.tickLobby(logger, dispatcher)
-	} else if s.phase == phasePlaying {
-		s.tickPlaying(logger, dispatcher)
+	} else if s.phase == phasePlaying || s.phase == phaseDone {
+		s.tickPlaying(ctx, logger, nk, dispatcher)
+	}
+
+	if s.closeRequest {
+		logger.Info("match finished, closing")
+		return nil
 	}
 
 	s.handleMessages(logger, dispatcher, messages)
@@ -319,26 +343,199 @@ func (s *MatchState) startMatch(logger runtime.Logger, dispatcher runtime.MatchD
 	}
 }
 
-// tickPlaying runs the pre-match pause, then hands the first turn over.
-// Card play and turn timeouts come next; for now the turn simply opens.
-func (s *MatchState) tickPlaying(logger runtime.Logger, dispatcher runtime.MatchDispatcher) {
+// tickPlaying drives everything that happens on a clock during a match: the
+// pre-match pause, bot moves, the turn timer and shutting down at the end.
+func (s *MatchState) tickPlaying(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher) {
+	if s.game == nil { // dealing failed; nothing to run
+		s.closeRequest = true
+		return
+	}
+
 	if s.preMatchTicks > 0 {
 		s.preMatchTicks--
 		if s.preMatchTicks > 0 {
 			return
 		}
 
-		s.turnTicks = s.cfg.TurnMs / msPerTick
-		s.broadcastEvents(logger, dispatcher, []EventMsg{{
-			Type:        EvTurnChanged,
-			Seat:        s.game.Current,
-			TurnMs:      s.cfg.TurnMs,
-			PendingDraw: s.game.PendingDraw,
-		}})
+		s.beginTurn()
+		s.broadcastEvents(logger, dispatcher, []EventMsg{s.turnChangedEvent()})
 		logger.WithField("seat", s.game.Current).Info("first turn")
+		return
 	}
 
-	// TODO: turn timer, actions, bot moves and game over.
+	if s.game.Over() {
+		s.closeTicks--
+		if s.closeTicks <= 0 {
+			s.closeRequest = true
+		}
+		return
+	}
+
+	s.tickAwaySeats(ctx, logger, nk, dispatcher)
+
+	// A short breath after every move, so clients can finish animating and
+	// three bots in a row do not resolve in one frame.
+	if s.gapTicks > 0 {
+		s.gapTicks--
+		return
+	}
+
+	// A bot seat plays by itself after a short pause.
+	if s.seats[s.game.Current].kind == KindBot {
+		if s.botThinkTicks > 0 {
+			s.botThinkTicks--
+			return
+		}
+		// Note: Apply advances the turn, so the seat must be captured first.
+		seat := s.game.Current
+		action := game.BotAction(s.game, seat, s.rng)
+		s.applyAction(logger, dispatcher, seat, action, nil)
+		return
+	}
+
+	// Owing cards with nothing to stack on them leaves no choice, so take them
+	// now rather than make the player find the deck or wait out the clock.
+	if s.game.PendingDraw > 0 && len(s.game.PlayableCards(s.game.Current)) == 0 {
+		s.applyAction(logger, dispatcher, s.game.Current, game.Action{Type: game.DrawCard}, nil)
+		return
+	}
+
+	// A human seat runs out of time.
+	s.turnTicks--
+	if s.turnTicks <= 0 {
+		s.timeOutTurn(ctx, logger, nk, dispatcher)
+	}
+}
+
+// tickAwaySeats gives a seat to a bot once its player has been gone too long,
+// even if their turn has not come round again.
+func (s *MatchState) tickAwaySeats(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher) {
+	for i, st := range s.seats {
+		if st.kind != KindHuman || st.connected {
+			s.awayTicks[i] = 0
+			continue
+		}
+
+		s.awayTicks[i]++
+		if s.awayTicks[i]*msPerTick >= s.cfg.DisconnectBotMs {
+			s.giveSeatToBot(ctx, logger, nk, dispatcher, i, RemovedDisconnected)
+		}
+	}
+}
+
+// timeOutTurn makes the safe move for a player who ran out of time: take any
+// cards owed, otherwise draw one and end the turn. It never plays a card for
+// them. Enough of these in a row and a bot takes the seat.
+func (s *MatchState) timeOutTurn(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher) {
+	seat := s.game.Current
+	logger.WithField("seat", seat).Info("turn timed out")
+
+	events := []EventMsg{{Type: EvTurnTimedOut, Seat: seat}}
+	if s.game.DrawnCard != nil {
+		s.applyAction(logger, dispatcher, seat, game.Action{Type: game.Pass}, events)
+	} else {
+		s.applyAction(logger, dispatcher, seat, game.Action{Type: game.DrawCard}, events)
+
+		// A drawn card that could be played still ends the turn: the player was
+		// not there to choose.
+		if !s.game.Over() && s.game.DrawnCard != nil && s.game.Current == seat {
+			s.applyAction(logger, dispatcher, seat, game.Action{Type: game.Pass}, nil)
+		}
+	}
+
+	s.missedTurns[seat]++
+	// Quick matches are for testing the client: sitting idle shouldn't end them.
+	if !s.skipLobby && s.missedTurns[seat] >= s.cfg.MissedTurnsForBot {
+		s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, RemovedMissedTurns)
+	}
+}
+
+// applyAction runs one move through the rules and tells everyone what happened.
+// prefix events (like TURN_TIMED_OUT) are sent in the same batch.
+func (s *MatchState) applyAction(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int, action game.Action, prefix []EventMsg) {
+	events, err := s.game.Apply(seat, action)
+	if err != nil {
+		logger.WithField("seat", seat).WithField("error", err.Error()).Warn("server move rejected")
+		return
+	}
+
+	s.afterAction(logger, dispatcher, seat, events, prefix)
+}
+
+// afterAction restarts the timers and broadcasts, once a move has been applied.
+func (s *MatchState) afterAction(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int, events []game.Event, prefix []EventMsg) {
+	s.beginTurn()
+
+	batch := append(prefix, toEventMsgs(events, s.turnTicks*msPerTick, s.game.PendingDraw)...)
+	for i := range batch {
+		if batch[i].Type == EvDirectionChanged {
+			batch[i].Direction = s.game.Direction
+		}
+	}
+	s.broadcastEvents(logger, dispatcher, batch)
+
+	if s.game.Over() {
+		s.closeTicks = s.cfg.PostGameCloseMs / msPerTick
+		s.phase = phaseDone
+		s.labelDirty = true
+		logger.WithField("ranking", s.game.Ranking).Info("match over")
+	}
+}
+
+// beginTurn restarts the clocks for whoever is on turn now. The gap runs first,
+// then the bot's thinking pause, then the turn timer.
+func (s *MatchState) beginTurn() {
+	s.turnTicks = s.cfg.TurnMs / msPerTick
+	s.botThinkTicks = s.cfg.BotThinkMs / msPerTick
+	s.gapTicks = s.cfg.TurnGapMs / msPerTick
+	s.turnExtended = false
+}
+
+func (s *MatchState) turnChangedEvent() EventMsg {
+	return EventMsg{
+		Type:        EvTurnChanged,
+		Seat:        s.game.Current,
+		TurnMs:      s.cfg.TurnMs,
+		PendingDraw: s.game.PendingDraw,
+	}
+}
+
+// giveSeatToBot is permanent: the player is removed from the match and cannot
+// rejoin, so their client falls back to the home screen.
+func (s *MatchState) giveSeatToBot(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher, seat int, reason string) {
+	if s.seats[seat].kind != KindHuman {
+		return
+	}
+
+	// Tell them first, while they are still in the match to receive it.
+	s.sendRemoved(logger, dispatcher, s.seats[seat].presence, reason)
+
+	// Nobody would be left watching, so end the match instead of handing the
+	// last seat to a bot and playing to an empty room.
+	if s.seatedHumans() == 1 {
+		logger.WithField("seat", seat).WithField("reason", reason).Info("last player gone, closing match")
+		clearCurrentMatch(ctx, logger, nk, s.seats[seat].userID)
+		s.closeRequest = true
+		return
+	}
+
+	presence := s.seats[seat].presence
+	userID := s.seats[seat].userID
+	s.seats[seat].kind = KindBot
+	s.seats[seat].presence = nil
+	s.seats[seat].connected = true
+	s.missedTurns[seat] = 0
+	s.awayTicks[seat] = 0
+	clearCurrentMatch(ctx, logger, nk, userID) // so their client goes home, not back here
+
+	logger.WithField("seat", seat).WithField("reason", reason).Info("bot took over the seat")
+	s.broadcastEvents(logger, dispatcher, []EventMsg{{Type: EvSeatControl, Seat: seat, Kind: KindBot}})
+
+	if presence != nil {
+		if err := dispatcher.MatchKick([]runtime.Presence{presence}); err != nil {
+			logger.WithField("error", err.Error()).Warn("could not kick the replaced player")
+		}
+	}
 }
 
 // handleMessages processes what clients sent this tick. Card play arrives with
@@ -357,12 +554,10 @@ func (s *MatchState) handleMessages(logger runtime.Logger, dispatcher runtime.Ma
 			}
 
 		case OpPlayCard, OpDrawCard, OpPass:
-			if s.phase != phasePlaying {
-				s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "the match has not started")
-				continue
-			}
-			// TODO: run the action through game.Apply and broadcast the events.
-			s.sendError(logger, dispatcher, m, ErrCodeNotImplemented, "card play is not wired up yet")
+			s.handleAction(logger, dispatcher, seat, m)
+
+		case OpExtendTurn:
+			s.handleExtendTurn(logger, dispatcher, seat, m)
 
 		default:
 			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, "unknown opcode")
@@ -402,6 +597,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 		CurrentSeat: g.Current,
 		PendingDraw: g.PendingDraw,
 		DeckCount:   g.Deck.Len(),
+		DrawnCardID: -1,
 		TurnMsLeft:  s.turnTicks * msPerTick,
 		StartsInMs:  s.preMatchTicks * msPerTick,
 		Ranking:     g.Ranking,
@@ -422,8 +618,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 
 	// Only the player who drew it knows which card is waiting to be played.
 	if seat == g.Current && g.DrawnCard != nil {
-		id := g.DrawnCard.ID
-		msg.DrawnCardID = &id
+		msg.DrawnCardID = g.DrawnCard.ID
 	}
 	return msg
 }
@@ -475,6 +670,21 @@ func (s *MatchState) sendError(logger runtime.Logger, dispatcher runtime.MatchDi
 	}
 	if err := dispatcher.BroadcastMessage(OpError, data, []runtime.Presence{presence}, nil, true); err != nil {
 		logger.WithField("error", err.Error()).Warn("send error")
+	}
+}
+
+// sendRemoved tells a player they no longer have a seat. A disconnected
+// player has no presence and simply finds out on their next launch.
+func (s *MatchState) sendRemoved(logger runtime.Logger, dispatcher runtime.MatchDispatcher, presence runtime.Presence, reason string) {
+	if presence == nil {
+		return
+	}
+	data, err := json.Marshal(RemovedMsg{Reason: reason})
+	if err != nil {
+		return
+	}
+	if err := dispatcher.BroadcastMessage(OpRemoved, data, []runtime.Presence{presence}, nil, true); err != nil {
+		logger.WithField("error", err.Error()).Warn("send removed")
 	}
 }
 
@@ -553,6 +763,18 @@ func (s *MatchState) freeSeat() int {
 	return -1
 }
 
+// seatedHumans counts human seats whether or not they are currently connected,
+// unlike humanCount which only counts the ones present.
+func (s *MatchState) seatedHumans() int {
+	n := 0
+	for _, seat := range s.seats {
+		if seat.kind == KindHuman {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *MatchState) humanCount() int {
 	n := 0
 	for _, seat := range s.seats {
@@ -591,7 +813,7 @@ func (s *MatchState) newBotSeat() seat {
 // label is what find_match searches over: open lobbies with room.
 func (s *MatchState) label() string {
 	open := 0
-	if s.phase == phaseLobby && s.freeSeat() >= 0 &&
+	if s.phase == phaseLobby && !s.skipLobby && s.freeSeat() >= 0 &&
 		(!s.countdownStarted() || s.countdownMsLeft() > s.cfg.JoinCutoffMs) {
 		open = 1
 	}
@@ -632,4 +854,103 @@ func profileOf(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModu
 // connectionEvent tells the table someone dropped or came back.
 func connectionEvent(seat int, connected bool) EventMsg {
 	return EventMsg{Type: EvPlayerConnection, Seat: seat, Connected: &connected}
+}
+
+// handleAction runs one client move through the rules. A rejected move changes
+// nothing and the sender is told why.
+func (s *MatchState) handleAction(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int, m runtime.MatchData) {
+	if s.phase != phasePlaying || s.game == nil {
+		s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "the match has not started")
+		return
+	}
+	if s.preMatchTicks > 0 {
+		s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "the first turn has not begun")
+		return
+	}
+
+	action, err := parseAction(m)
+	if err != nil {
+		s.sendError(logger, dispatcher, m, ErrCodeBadMessage, err.Error())
+		return
+	}
+
+	events, err := s.game.Apply(seat, action)
+	if err != nil {
+		code, message := errorCode(err)
+		s.sendError(logger, dispatcher, m, code, message)
+		return
+	}
+
+	s.missedTurns[seat] = 0 // they are clearly still here
+	s.afterAction(logger, dispatcher, seat, events, nil)
+}
+
+// handleExtendTurn restarts the clock for a player who drew a wild and chose to
+// play it, so picking its colour gets a full turn of its own. Once per turn,
+// and only in that spot, so it can't be used to stall.
+func (s *MatchState) handleExtendTurn(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int, m runtime.MatchData) {
+	if s.phase != phasePlaying || s.game == nil || s.preMatchTicks > 0 || s.game.Over() {
+		s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "no turn to extend")
+		return
+	}
+	if seat != s.game.Current {
+		s.sendError(logger, dispatcher, m, ErrCodeNotYourTurn, "not your turn")
+		return
+	}
+	if s.turnExtended || !s.game.DrawnCardIsWild() {
+		s.sendError(logger, dispatcher, m, ErrCodeCannotExtend, "only once, after drawing a wild you mean to play")
+		return
+	}
+
+	s.turnExtended = true
+	s.turnTicks = s.cfg.TurnMs / msPerTick
+	s.missedTurns[seat] = 0
+	s.broadcastEvents(logger, dispatcher, []EventMsg{{Type: EvTurnExtended, Seat: seat, TurnMs: s.cfg.TurnMs}})
+}
+
+// parseAction turns one match message into a rules action.
+func parseAction(m runtime.MatchData) (game.Action, error) {
+	switch m.GetOpCode() {
+	case OpDrawCard:
+		return game.Action{Type: game.DrawCard}, nil
+
+	case OpPass:
+		return game.Action{Type: game.Pass}, nil
+
+	case OpPlayCard:
+		var req PlayCardReq
+		if err := json.Unmarshal(m.GetData(), &req); err != nil {
+			return game.Action{}, errors.New("could not read the play")
+		}
+		return game.Action{
+			Type:   game.PlayCard,
+			CardID: req.CardID,
+			Color:  game.Color(req.Color),
+		}, nil
+	}
+	return game.Action{}, errors.New("unknown opcode")
+}
+
+// errorCode maps a rules error to the code the client switches on. The message
+// is the rules text, which is already written for a player to read.
+func errorCode(err error) (string, string) {
+	switch {
+	case errors.Is(err, game.ErrNotYourTurn):
+		return ErrCodeNotYourTurn, err.Error()
+	case errors.Is(err, game.ErrCardNotInHand):
+		return ErrCodeCardNotInHand, err.Error()
+	case errors.Is(err, game.ErrIllegalCard):
+		return ErrCodeIllegalCard, err.Error()
+	case errors.Is(err, game.ErrColorRequired):
+		return ErrCodeColorRequired, err.Error()
+	case errors.Is(err, game.ErrMustPlayDrawnCard):
+		return ErrCodeMustPlayDrawnCard, err.Error()
+	case errors.Is(err, game.ErrAlreadyDrew):
+		return ErrCodeAlreadyDrew, err.Error()
+	case errors.Is(err, game.ErrCannotPass):
+		return ErrCodeCannotPass, err.Error()
+	case errors.Is(err, game.ErrGameOver):
+		return ErrCodeGameOver, err.Error()
+	}
+	return ErrCodeBadMessage, err.Error()
 }

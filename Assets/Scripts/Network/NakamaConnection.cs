@@ -27,6 +27,10 @@ public class NakamaConnection : MonoBehaviour
 
     [SerializeField] private int maxProfiles = 8;
 
+    [Tooltip("Skip matchmaking: Find Match deals immediately against three bots, " +
+             "with no 12 second countdown. Turn off for a real build.")]
+    [SerializeField] private bool instantMatch;
+
     private IClient _client;
     private ISession _session;
     private ISocket _socket;
@@ -262,9 +266,19 @@ public class NakamaConnection : MonoBehaviour
     /// <summary>
     /// Asks the server for a match with a free seat, creating one if needed.
     /// Returns the match id, or null if the call failed.
+    ///
+    /// With instantMatch on, it asks for a private match that deals straight
+    /// away against bots instead, so testing doesn't mean sitting through the
+    /// matchmaking countdown.
     /// </summary>
     public async Task<string> FindMatchAsync()
     {
+        if (instantMatch)
+        {
+            Debug.LogWarning("instantMatch is on: skipping matchmaking and playing bots");
+            return await MatchIdRpcAsync("quick_match");
+        }
+
         return await MatchIdRpcAsync("find_match");
     }
 

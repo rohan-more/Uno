@@ -162,6 +162,16 @@ func (s *GameState) nextSeat(from, step int) int {
 	return seat
 }
 
+// DrawnCardIsWild reports whether the card drawn this turn, still waiting to
+// be played or kept, is a Wild or Wild Draw Four.
+func (s *GameState) DrawnCardIsWild() bool {
+	if s.DrawnCard == nil {
+		return false
+	}
+	def, ok := s.cat.Def(*s.DrawnCard)
+	return ok && def.Type.IsWild()
+}
+
 // drawCards moves up to n cards from the deck into a player's hand and returns
 // the cards drawn. If the deck runs out, it refills it from the discard pile
 // (everything except the top card). If both are exhausted it returns fewer

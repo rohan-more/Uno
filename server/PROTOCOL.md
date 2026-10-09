@@ -110,7 +110,7 @@ reconnect, and in reply to `REQUEST_STATE`:
   "direction": 1,
   "currentSeat": 0,
   "pendingDraw": 0,
-  "drawnCardId": null,
+  "drawnCardId": -1,
   "deckCount": 79,
   "turnMsLeft": 8000,
   "startsInMs": 3000,
@@ -120,8 +120,8 @@ reconnect, and in reply to `REQUEST_STATE`:
 ```
 
 - `hand` is the receiver's own hand only; `you` is their seat.
-- `drawnCardId` is set only for the current player, after they drew a playable
-  card.
+- `drawnCardId` is the card the current player drew and may still play, or -1.
+  It is only ever sent to that player.
 - `place` is 0 while playing, else the finishing position.
 - `startsInMs` is only present before the first turn.
 - Timers are always **time remaining in milliseconds**, never a clock time, so
@@ -135,9 +135,17 @@ reconnect, and in reply to `REQUEST_STATE`:
 | 3 | `DRAW_CARD` | `{}` | Your turn, not yet drawn. Also how a pending +2/+4 is taken |
 | 4 | `PASS` | `{}` | Your turn, after drawing a playable card |
 | 5 | `REQUEST_STATE` | `{}` | Any time; the server replies with `GAME_STATE` |
+| 6 | `EXTEND_TURN` | `{}` | Your turn, holding a drawn **wild** you are about to play, once per turn. Restarts your clock so choosing its color gets a full turn |
 
 There is no start action: the countdown starts the match. The color for a wild
 is chosen **before** sending, so a play is always one message.
+
+**Choosing in time.** Clients run their own countdown on every choice popup
+(play or keep a drawn card; pick a wild's color), set a little under the
+server's remaining time so the client answers first. Out of time on play-or-keep
+means keep (`PASS`); out of time on a color means a random color. Picking the
+color for a drawn wild is a second choice in the same turn, so the client sends
+`EXTEND_TURN` first and gets a fresh clock for it.
 
 ## 6. Server → client
 
@@ -156,7 +164,8 @@ is chosen **before** sending, so a play is always one message.
 | `CARDS_DRAWN` | `seat, count, cards` | **`cards` only goes to the drawer**; others get `count` |
 | `PLAYER_SKIPPED` | `seat` | Sent with a Skip, so the client can animate it |
 | `DIRECTION_CHANGED` | `direction` | `1` or `-1` |
-| `TURN_CHANGED` | `seat, turnMs, pendingDraw` | `turnMs` is 0 for a bot seat (no countdown ring) |
+| `TURN_CHANGED` | `seat, turnMs, pendingDraw` | `turnMs` is the full turn length, for bots too (they act after `botThinkMs`) |
+| `TURN_EXTENDED` | `seat, turnMs` | `EXTEND_TURN` was accepted: that seat's clock restarts at `turnMs` |
 | `TURN_TIMED_OUT` | `seat` | Precedes the automatic draw's events |
 | `SEAT_CONTROL` | `seat, kind` | Only ever `human` → `bot`; permanent |
 | `PLAYER_CONNECTION` | `seat, connected` | Grey out the nameplate |
@@ -181,12 +190,30 @@ is chosen **before** sending, so a play is always one message.
 | `GAME_NOT_STARTED` / `GAME_OVER` | Action outside the playing phase |
 | `SEAT_TAKEN_BY_BOT` | Rejoined after being replaced |
 | `BAD_MESSAGE` | Unknown opcode or unreadable JSON |
+| `CANNOT_EXTEND` | `EXTEND_TURN` twice in a turn, or without a drawn wild |
 
 A well-behaved client never triggers these: it enables only playable cards, on
 its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
 
+**op 104 `REMOVED`** — to one player, the moment they lose their seat, just
+before they are kicked (or the match closes, if they were the last human):
+
+```json
+{ "reason": "MISSED_TURNS" }
+```
+
+| Reason | Cause |
+|---|---|
+| `MISSED_TURNS` | Ran out of time on 2 turns in a row |
+| `DISCONNECTED` | Gone longer than `disconnectBotMs`; usually never delivered, since they are offline |
+
+Nothing else follows. The client should say why and go back to the home screen.
+
 ## 7. Timers, timeouts and bots
 
+- **Owing cards with nothing to stack** (a pending +2/+4 and no matching draw
+  card in hand): the server takes them for the player at once, after the
+  `turnGapMs` pause. There is no choice to wait for, and it is not a missed turn.
 - **Turn timer: 8 s.** On timeout the server makes the safe move and never plays
   a card: take a pending +2/+4, or draw one and pass.
 
@@ -202,13 +229,22 @@ its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
   - **2 missed turns in a row** (acting in time resets the counter), or
   - **15 s disconnected**, so a drop right after one's turn is noticed before the
     turn comes round again.
+  - Quick matches (`quick_match`, for testing) skip the missed-turns rule: an
+    idle player keeps timing out but keeps their seat.
+- **The player is told first** with `REMOVED` (op 104), whichever way the seat
+  is lost.
+- **The last human leaving ends the match.** There is no point handing the final
+  seat to a bot and playing to an empty room, so the match closes instead.
 - **Takeover is permanent.** The player never gets the seat back. Reconnecting
   or relaunching lands them on the home screen; they do not spectate. Rejoining
   is refused with `SEAT_TAKEN_BY_BOT`.
 - **Reconnect inside the window:** the client rejoins the same match id (see
   `current_match`) and receives a fresh `GAME_STATE`. Others get
   `PLAYER_CONNECTION connected:true`.
-- **Bot turns** have no timer; the bot acts after `botThinkMs` (default 0).
+- **Bot turns** have no timer; the bot acts after `botThinkMs` (default 1200 ms).
+- **Every move is followed by `turnGapMs`** before the next seat may act, so a
+  run of bot turns does not resolve in a single frame and clients have time to
+  animate.
 - **Nobody left:** when no human has been connected for ~10 s, the match closes.
 - **Phase 2 bot:** placeholder logic (first legal card, most-held color,
   otherwise draw and pass) behind one `BotAction` function. The heuristic bot
@@ -230,9 +266,10 @@ key:        match
   "botJoinAtMsLeft": [8000, 5000, 3000],
   "preMatchMs": 3000,
   "turnMs": 8000,
+  "turnGapMs": 500,
   "missedTurnsForBot": 2,
   "disconnectBotMs": 15000,
-  "botThinkMs": 0,
+  "botThinkMs": 1200,
   "emptyLobbyGraceMs": 10000,
   "noHumansCloseMs": 10000,
   "postGameCloseMs": 30000

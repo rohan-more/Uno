@@ -38,6 +38,12 @@ public class CardItem : MonoBehaviour
         button.interactable = value;
     }
 
+    // Blocks clicks without the Button's disabled tint (which fades the card to half alpha).
+    public void SetClickable(bool value)
+    {
+        cardImage.raycastTarget = value;
+    }
+
     public void SetEligible(bool value)
     {
         cardOutline.enabled = value;

@@ -9,12 +9,14 @@ const (
 	OpDrawCard     int64 = 3
 	OpPass         int64 = 4
 	OpRequestState int64 = 5
+	OpExtendTurn   int64 = 6
 
 	// server -> client
 	OpLobbyState int64 = 100
 	OpGameState  int64 = 101
 	OpEvents     int64 = 102
 	OpError      int64 = 103
+	OpRemoved    int64 = 104
 )
 
 // Seat kinds as the client sees them.
@@ -71,7 +73,7 @@ type GameStateMsg struct {
 	Direction   int        `json:"direction"`
 	CurrentSeat int        `json:"currentSeat"`
 	PendingDraw int        `json:"pendingDraw"`
-	DrawnCardID *int       `json:"drawnCardId"`
+	DrawnCardID int        `json:"drawnCardId"` // -1 when there is none
 	DeckCount   int        `json:"deckCount"`
 	TurnMsLeft  int        `json:"turnMsLeft"`
 	StartsInMs  int        `json:"startsInMs,omitempty"` // only before the first turn
@@ -109,6 +111,19 @@ type ErrorMsg struct {
 	Message string `json:"message"`
 }
 
+// RemovedMsg (op 104) goes only to a player who just lost their seat, right
+// before they are kicked or the match closes, so their client can go home
+// instead of waiting for messages that will never come.
+type RemovedMsg struct {
+	Reason string `json:"reason"` // one of the Removed* reasons
+}
+
+// Why a player lost their seat.
+const (
+	RemovedMissedTurns  = "MISSED_TURNS"
+	RemovedDisconnected = "DISCONNECTED"
+)
+
 // Event type names, as sent to clients.
 const (
 	EvCardPlayed       = "CARD_PLAYED"
@@ -121,6 +136,7 @@ const (
 	EvPlayerConnection = "PLAYER_CONNECTION"
 	EvPlayerFinished   = "PLAYER_FINISHED"
 	EvGameOver         = "GAME_OVER"
+	EvTurnExtended     = "TURN_EXTENDED"
 )
 
 // Error codes, as sent to clients.
@@ -136,6 +152,7 @@ const (
 	ErrCodeGameOver          = "GAME_OVER"
 	ErrCodeBadMessage        = "BAD_MESSAGE"
 	ErrCodeNotImplemented    = "NOT_IMPLEMENTED"
+	ErrCodeCannotExtend      = "CANNOT_EXTEND"
 )
 
 // ---------- client -> server ----------
@@ -156,6 +173,43 @@ func toCardMsgs(cards []game.Card) []CardMsg {
 	out := make([]CardMsg, 0, len(cards))
 	for _, c := range cards {
 		out = append(out, toCardMsg(c))
+	}
+	return out
+}
+
+// toEventMsgs converts what the rules engine reported into wire events. The
+// turn timer and pending draw live on the handler, so they are attached here.
+func toEventMsgs(events []game.Event, turnMs, pendingDraw int) []EventMsg {
+	out := make([]EventMsg, 0, len(events))
+
+	for _, e := range events {
+		msg := EventMsg{Type: string(e.Type), Seat: e.Seat}
+
+		switch e.Type {
+		case game.EvCardPlayed:
+			card := toCardMsg(e.Card)
+			msg.Card = &card
+			msg.Color = string(e.Color)
+
+		case game.EvCardsDrawn:
+			msg.Count = len(e.Cards)
+			msg.Cards = toCardMsgs(e.Cards) // stripped per player before sending
+
+		case game.EvDirectionChanged:
+			msg.Direction = 0 // filled in by the caller, which knows the state
+
+		case game.EvTurnChanged:
+			msg.TurnMs = turnMs
+			msg.PendingDraw = pendingDraw
+
+		case game.EvPlayerFinished:
+			msg.Place = e.Place
+
+		case game.EvGameOver:
+			msg.Ranking = e.Ranking
+		}
+
+		out = append(out, msg)
 	}
 	return out
 }

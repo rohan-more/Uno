@@ -90,6 +90,20 @@ func rpcCurrentMatch(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 	return string(reply), nil
 }
 
+// rpcQuickMatch makes a private match that starts at once, with bots in the
+// other three seats. Handy for working on the match scene without opening four
+// windows and waiting out the countdown. It is never returned by find_match.
+func rpcQuickMatch(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
+	matchID, err := nk.MatchCreate(ctx, matchModuleName, map[string]interface{}{"skipLobby": true})
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("quick match create failed")
+		return "", runtime.NewError("could not create a match", 13)
+	}
+
+	logger.WithField("match_id", matchID).Info("created a quick match")
+	return marshalMatchID(matchID)
+}
+
 // rpcResetConfig writes the shipped tunables back, undoing console edits.
 func rpcResetConfig(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
 	if err := WriteDefaultConfig(ctx, nk); err != nil {
@@ -102,6 +116,10 @@ func rpcResetConfig(ctx context.Context, logger runtime.Logger, db *sql.DB, nk r
 // ---------- storage helpers used by the match handler ----------
 
 func writeCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID, matchID string) {
+	if nk == nil || userID == "" {
+		return // a bot seat, or a test without a server
+	}
+
 	value, err := json.Marshal(currentMatchRecord{MatchID: matchID})
 	if err != nil {
 		return
@@ -121,6 +139,10 @@ func writeCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.Na
 }
 
 func clearCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID string) {
+	if nk == nil || userID == "" {
+		return
+	}
+
 	err := nk.StorageDelete(ctx, []*runtime.StorageDelete{{
 		Collection: matchCollection,
 		Key:        matchKey,

@@ -27,6 +27,7 @@ type MatchConfig struct {
 	// Turns
 	TurnMs     int `json:"turnMs"`     // per turn, before the server plays it safe
 	BotThinkMs int `json:"botThinkMs"` // pause before a bot acts, so moves are watchable
+	TurnGapMs  int `json:"turnGapMs"`  // pause after any move, so play does not race
 
 	// Absent players
 	MissedTurnsForBot int `json:"missedTurnsForBot"` // consecutive timeouts before a bot takes over
@@ -46,7 +47,8 @@ func DefaultMatchConfig() MatchConfig {
 		JoinCutoffMs:      1000,
 		PreMatchMs:        3000,
 		TurnMs:            8000,
-		BotThinkMs:        0,
+		BotThinkMs:        1200,
+		TurnGapMs:         500,
 		MissedTurnsForBot: 2,
 		DisconnectBotMs:   15000,
 		EmptyLobbyGraceMs: 10000,
@@ -98,6 +100,7 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 	c.PreMatchMs = fix("preMatchMs", c.PreMatchMs, def.PreMatchMs, true)
 	c.TurnMs = fix("turnMs", c.TurnMs, def.TurnMs, false)
 	c.BotThinkMs = fix("botThinkMs", c.BotThinkMs, def.BotThinkMs, true)
+	c.TurnGapMs = fix("turnGapMs", c.TurnGapMs, def.TurnGapMs, true)
 	c.MissedTurnsForBot = fix("missedTurnsForBot", c.MissedTurnsForBot, def.MissedTurnsForBot, false)
 	c.DisconnectBotMs = fix("disconnectBotMs", c.DisconnectBotMs, def.DisconnectBotMs, false)
 	c.EmptyLobbyGraceMs = fix("emptyLobbyGraceMs", c.EmptyLobbyGraceMs, def.EmptyLobbyGraceMs, false)

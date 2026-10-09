@@ -4,11 +4,19 @@ using System.Collections.Generic;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
+[Serializable]
+public struct OpponentSeat
+{
+    public HandView hand;
+    public PlayerSeat seat;
+}
+
 public class TestGameController : MonoBehaviour
 {
     [SerializeField] private PlayerActionBus actionBus;
     [SerializeField] private HandView handView;
-    [SerializeField] private HandView botHandView;
+    [Tooltip("Bots in turn order, clockwise from you. One entry per bot.")]
+    [SerializeField] private OpponentSeat[] opponents;
     [SerializeField] private DiscardPileView discardPileView;
     [SerializeField] private CardDatabase database;
     [SerializeField] private CardProxyView cardProxy;
@@ -19,6 +27,8 @@ public class TestGameController : MonoBehaviour
     [SerializeField] private int testHandSize = 7;
     [SerializeField] private List<string> testCardIds;
     private PlayerController[] players;
+    private HandView[] handViews;   // indexed by player index
+    private PlayerSeat[] seats;     // indexed by player index
     private DeckModel deck;
     private int currentPlayerIndex;
     private RulesEngine rulesEngine;
@@ -90,8 +100,8 @@ public class TestGameController : MonoBehaviour
 
     private void DealInitialHands()
     {
-        players[0].State.Hand = new List<CardInstance>();
-        players[1].State.Hand = new List<CardInstance>();
+        foreach (var player in players)
+            player.State.Hand = new List<CardInstance>();
 
         if (useTestHand)
         {
@@ -102,11 +112,12 @@ public class TestGameController : MonoBehaviour
             DealCards(players[0].State, testHandSize);
         }
 
-        // Bot is always random for now
-        DealCards(players[1].State, testHandSize);
+        // Bots are always random for now
+        for (int i = 1; i < players.Length; i++)
+            DealCards(players[i].State, testHandSize);
 
-        handView.BuildHand(players[0].State.Hand);
-        botHandView.BuildHand(players[1].State.Hand);
+        for (int i = 0; i < players.Length; i++)
+            handViews[i].BuildHand(players[i].State.Hand);
 
         handView.CheckValidCards(rulesEngine, gameState, players[0].State);
     }
@@ -154,7 +165,16 @@ public class TestGameController : MonoBehaviour
     private void DealCards(PlayerState player, int count)
     {
         for (int i = 0; i < count; i++)
+        {
+            if (deck.Count == 0)
+            {
+                Debug.LogError($"Deck ran out while dealing to player {player.PlayerId}: " +
+                               $"{database.Cards.Count} cards in CardDatabase isn't enough for {players.Length} players x {count}");
+                return;
+            }
+
             player.Hand.Add(deck.Draw());
+        }
     }
 
     private void StartFirstTurn()
@@ -210,20 +230,16 @@ public class TestGameController : MonoBehaviour
             PlayerIndex = playerIndex,
             Cards = drawn
         });
+
+        // Bots don't play the drawn card yet, so they pass
+        if (players[playerIndex].DecisionMaker is BotDecisionMaker)
+            EndTurn(resolver.PassTurn(playerIndex));
     }
 
     private void HandleCardsDrawn(CardDrawEvent evt)
     {
-        if (evt.PlayerIndex == 0)
-        {
-            foreach (var card in evt.Cards)
-                handView.AddCard(card);
-        }
-        else
-        {
-            foreach (var card in evt.Cards)
-                botHandView.AddCard(card);
-        }
+        foreach (var card in evt.Cards)
+            handViews[evt.PlayerIndex].AddCard(card);
     }
 
     private void StartTurn(int playerIndex)
@@ -257,7 +273,18 @@ public class TestGameController : MonoBehaviour
 
     private void SetupPlayers()
     {
-        players = new PlayerController[2];
+        handViews = new HandView[opponents.Length + 1];
+        seats = new PlayerSeat[opponents.Length + 1];
+
+        handViews[0] = handView;
+        seats[0] = PlayerSeat.BottomPlayer;
+        for (int i = 0; i < opponents.Length; i++)
+        {
+            handViews[i + 1] = opponents[i].hand;
+            seats[i + 1] = opponents[i].seat;
+        }
+
+        players = new PlayerController[handViews.Length];
 
         // Player 0 = YOU
         players[0] = new PlayerController
@@ -266,17 +293,20 @@ public class TestGameController : MonoBehaviour
             DecisionMaker = new HumanDecisionMaker(actionBus)
         };
 
-        // Player 1 = BOT (test stub)
-        players[1] = new PlayerController
+        // Everyone else = BOT (test stub)
+        for (int i = 1; i < players.Length; i++)
         {
-            State = new PlayerState { PlayerId = 1 },
-            DecisionMaker = new BotDecisionMaker()
-        };
+            players[i] = new PlayerController
+            {
+                State = new PlayerState { PlayerId = i },
+                DecisionMaker = new BotDecisionMaker()
+            };
+        }
     }
 
     private void TryPlayCard(PlayerActionRequest request)
     {
-        CardItem card = currentPlayerIndex == 0 ? handView.GetCardItem(request.Card) : botHandView.GetCardItem(request.Card);
+        CardItem card = handViews[currentPlayerIndex].GetCardItem(request.Card);
 
         if (card == null)
         {
@@ -317,16 +347,22 @@ public class TestGameController : MonoBehaviour
         }
 
         turnPhase = TurnPhase.Animating;
-        PlayerSeat seat = currentPlayerIndex == 0 ? PlayerSeat.BottomPlayer : PlayerSeat.TopPlayer;
+        PlayerSeat seat = seats[currentPlayerIndex];
         Debug.Log("Card Played: " + card.Instance.CardId);
-        cardProxy.Show(card.Sprite, seat);
+        cardProxy.Show(card.Instance.GetDefinition(database).FrontSprite, seat);
         cardProxy.MoveTo(() =>
         {
+            gameState.DiscardPile.Add(card.Instance);
             discardPileView.SetTopCard(card.Instance, card.Instance.GetDefinition(database).FrontSprite);
 
             RemoveFromHandView(card);
 
-            if (result.Type == PlayResultType.AwaitingWildColor)
+            if (result.Type == PlayResultType.AwaitingWildColor &&
+                players[currentPlayerIndex].DecisionMaker is BotDecisionMaker)
+            {
+                EndTurn(resolver.ResolveWild(PickBotWildColor(players[currentPlayerIndex].State)));
+            }
+            else if (result.Type == PlayResultType.AwaitingWildColor)
             {
                 PopupManager.Instance.Show(PopupType.ChooseColor, null, () =>
                 {
@@ -346,10 +382,32 @@ public class TestGameController : MonoBehaviour
 
     private void RemoveFromHandView(CardItem card)
     {
-        if (currentPlayerIndex == 0)
-            handView.RemoveCard(card.Instance);
-        else
-            botHandView.RemoveCard(card.Instance);
+        players[currentPlayerIndex].State.Hand.Remove(card.Instance);
+        handViews[currentPlayerIndex].RemoveCard(card.Instance);
+    }
+
+    // Bot picks the color it holds most of
+    private CardColor PickBotWildColor(PlayerState player)
+    {
+        var counts = new Dictionary<CardColor, int>();
+        foreach (var instance in player.Hand)
+        {
+            var color = instance.GetDefinition(database).Color;
+            if (color == CardColor.Wild) continue;
+            counts[color] = counts.TryGetValue(color, out int n) ? n + 1 : 1;
+        }
+
+        var best = CardColor.Red;
+        int bestCount = -1;
+        foreach (var pair in counts)
+        {
+            if (pair.Value > bestCount)
+            {
+                best = pair.Key;
+                bestCount = pair.Value;
+            }
+        }
+        return best;
     }
 
     private void EndTurn(TurnAdvanceResult turn)
@@ -374,7 +432,7 @@ public class TestGameController : MonoBehaviour
         Debug.Log("BOT THINKING...");
         yield return new WaitForSeconds(1f);
         turnPhase = TurnPhase.AwaitingAction;
-        StartTurn(1); // bot
+        StartTurn(currentPlayerIndex);
         Debug.Log("BOT DONE");
     }
 

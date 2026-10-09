@@ -7,8 +7,10 @@ It started as a single-player prototype. The rules now live on the server, which
 deals the cards, decides what is legal and tells each client only what that
 player is allowed to see.
 
-> **Status: in progress.** Login, matchmaking, lobbies with bots and dealing all
-> work end to end. Card play over the network is being built next; see the
+> **Status: playable, in progress.** A full four-player match runs end to end
+> over the network: login, matchmaking, lobbies with bots, dealing, turns with an
+> 8-second timer, bots taking over absent players, and a match scene that plays
+> it all out. A results screen, rematch and deployment are next; see the
 > [roadmap](#roadmap).
 
 <!-- TODO: demo.gif — four windows finding each other and filling a lobby -->
@@ -29,20 +31,26 @@ player is allowed to see.
   simulations.
 - **Games are reproducible.** Every shuffle comes from a seeded generator, so a
   seed plus the list of actions replays a match exactly.
+- **The client plays events, it doesn't simulate.** A presenter applies each
+  server event to the client's view of the table, then hands it to the UI one
+  at a time and waits for its animation, so a burst of bot moves never
+  overlaps on screen.
 
 ## Architecture
 
 ```
 Unity client (C#)                      Nakama server (Go plugin)
 ─────────────────                      ─────────────────────────
-NakamaConnection  ──── RPC ──────────▶ find_match / current_match
+NakamaConnection  ──── RPC ──────────▶ find_match / quick_match /
+       │                                current_match
        │          ──── socket ───────▶ match handler: 4 seats, lobby
-       │                                countdown, bots, turn order
+       │                                countdown, bots, turn timer,
+       │                                seat takeover
  LobbyView                                        │
  MatchmakingPanel ◀─── LOBBY_STATE ───────────────┤
- (match scene)    ◀─── GAME_STATE, EVENTS ────────┘
-                                                  │
-                                       game/ — pure Uno rules,
+ MatchPresenter   ◀─── GAME_STATE, EVENTS, ───────┘
+   ├─ MatchView        ERROR, REMOVED             │
+   └─ MatchSeatsView                   game/ — pure Uno rules,
                                        no Nakama imports
 ```
 
@@ -58,7 +66,7 @@ NakamaConnection  ──── RPC ──────────▶ find_match 
 | Client | Unity 2022.3 (URP), C#, TextMeshPro, DOTween |
 | Server | Go 1.26 plugin for Nakama 3.40 |
 | Infra | Docker Compose, PostgreSQL 16 |
-| Tests | `go test`: 73 cases covering rules, deck, lobby and message visibility |
+| Tests | `go test`: 87 cases covering rules, deck, bots, lobby, turn timeouts, seat takeover and message visibility |
 
 ## Run it
 
@@ -71,6 +79,9 @@ docker compose up -d --build
 The API is then on `localhost:7450` and the Nakama console on
 http://localhost:7451 (admin / password). Open the project in Unity, load
 `Assets/Scenes/Boot.unity` and press Play.
+
+To skip the lobby and play three bots straight away, tick **Instant Match** on
+the `Nakama` object in the Boot scene.
 
 To test multiplayer on one machine, build for Windows and start the executable
 several times: each window claims its own profile and logs in as a different
@@ -88,10 +99,15 @@ cd server && go test ./...
 - [x] Device login, generated names (`SpryCrane15`) and avatars
 - [x] Matchmaking: lobbies, 12-second countdown, bots filling seats
 - [x] Dealing and per-player snapshots
-- [ ] Card play over the network: turns, 8-second timer, events
-- [ ] Bots playing a real game, and taking over absent seats
-- [ ] Match scene UI for four players
-- [ ] Rankings, rematch, deployment
+- [x] Card play over the network: turns, 8-second timer, events
+- [x] Bots playing a real game, and taking over absent seats
+- [x] Match scene for four players: face-down opponent hands, nameplates,
+      turn-timer rings, card animations
+- [x] Draw deck, with a play-or-keep choice for a playable drawn card
+- [x] Choice countdowns that answer for you on timeout, and owed +2/+4
+      cards taken automatically
+- [ ] Results screen and rematch
+- [ ] Stronger bot, deployment
 
 ## Engineering notes
 
@@ -114,7 +130,19 @@ take a bot's seat. Listing open matches and creating one when there are none
 gives that; the matchmaker can still sit in front of it later if matches ever
 need to be skill-based.
 
-**Two bugs worth remembering.** "Close a match with no players" killed every
+**The bug that looked like a rules bug.** Matches kept freezing, usually right
+after a Reverse. The rules were fine: 500 simulated four-bot games with about
+2,800 Reverses all finished. The real cause was one line of ordering in the
+client's event presenter. It marked itself busy *after* handing an event to the
+UI, overwriting the UI's "done" signal, so every event waited out a 3-second
+safety timeout. The client drifted seconds behind the server's turn clock, your
+turn appeared on screen with almost no time left, two timeouts handed your seat
+to a bot, and as the only human the match closed without telling anyone.
+Reverse was just when the turn came back to you unexpectedly. The fix was the
+ordering, plus a `REMOVED` message so a player who loses their seat is told why
+and sent home instead of left staring at a frozen table.
+
+**Two more from the lobby.** "Close a match with no players" killed every
 lobby 200 ms after creation, before its creator could join. And storing the
 session under one key meant four test windows all restored the first window's
 token and logged in as the same account. Both were correct rules that were wrong
