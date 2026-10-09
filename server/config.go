@@ -31,7 +31,6 @@ type MatchConfig struct {
 
 	// Absent players
 	MissedTurnsForBot int `json:"missedTurnsForBot"` // consecutive timeouts before a bot takes over
-	DisconnectBotMs   int `json:"disconnectBotMs"`   // or this long disconnected
 
 	// Shutting down
 	EmptyLobbyGraceMs int `json:"emptyLobbyGraceMs"` // how long a new lobby waits for its first player
@@ -49,8 +48,7 @@ func DefaultMatchConfig() MatchConfig {
 		TurnMs:            8000,
 		BotThinkMs:        1200,
 		TurnGapMs:         500,
-		MissedTurnsForBot: 2,
-		DisconnectBotMs:   15000,
+		MissedTurnsForBot: 3,
 		EmptyLobbyGraceMs: 10000,
 		NoHumansCloseMs:   10000,
 		PostGameCloseMs:   30000,
@@ -102,7 +100,6 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 	c.BotThinkMs = fix("botThinkMs", c.BotThinkMs, def.BotThinkMs, true)
 	c.TurnGapMs = fix("turnGapMs", c.TurnGapMs, def.TurnGapMs, true)
 	c.MissedTurnsForBot = fix("missedTurnsForBot", c.MissedTurnsForBot, def.MissedTurnsForBot, false)
-	c.DisconnectBotMs = fix("disconnectBotMs", c.DisconnectBotMs, def.DisconnectBotMs, false)
 	c.EmptyLobbyGraceMs = fix("emptyLobbyGraceMs", c.EmptyLobbyGraceMs, def.EmptyLobbyGraceMs, false)
 	c.NoHumansCloseMs = fix("noHumansCloseMs", c.NoHumansCloseMs, def.NoHumansCloseMs, false)
 	c.PostGameCloseMs = fix("postGameCloseMs", c.PostGameCloseMs, def.PostGameCloseMs, false)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"time"
 
@@ -29,7 +30,8 @@ const (
 // while the lobby fills. Seats are never renumbered.
 type seat struct {
 	kind      string // KindEmpty | KindHuman | KindBot
-	userID    string
+	userID    string // the human who holds or held the seat; empty for lobby bots
+	publicID  string // the user id other clients see: real for humans, made up for bots
 	name      string
 	avatar    int
 	connected bool
@@ -60,7 +62,6 @@ type MatchState struct {
 	closeTicks    int             // ticks left before a finished match shuts down
 
 	missedTurns  [seatCount]int // consecutive timeouts, reset by acting in time
-	awayTicks    [seatCount]int // how long a human seat has been disconnected
 	closeRequest bool           // set when the match should end on this tick
 
 	countdownTicks int  // ticks left in the lobby; -1 until the first player joins
@@ -145,6 +146,7 @@ func (m *UnoMatch) MatchJoin(ctx context.Context, logger runtime.Logger, db *sql
 		s.seats[idx] = seat{
 			kind:      KindHuman,
 			userID:    p.GetUserId(),
+			publicID:  p.GetUserId(),
 			name:      name,
 			avatar:    avatar,
 			connected: true,
@@ -176,16 +178,22 @@ func (m *UnoMatch) MatchLeave(ctx context.Context, logger runtime.Logger, db *sq
 		if idx < 0 {
 			continue
 		}
-		clearCurrentMatch(ctx, logger, nk, p.GetUserId())
 
 		if s.phase == phaseLobby {
+			clearCurrentMatch(ctx, logger, nk, p.GetUserId())
 			s.seats[idx] = s.newBotSeat()
 			logger.WithField("seat", idx).Info("player left the lobby, bot took the seat")
 			continue
 		}
 
-		// TODO: during play, leaving should hand the seat to a bot permanently
-		// and broadcast SEAT_CONTROL. That arrives with the turn logic.
+		// During play a closing socket could be a dropped connection or a
+		// player quitting; there's no telling them apart. Either way the seat
+		// is held and their turns time out, and the current-match record stays
+		// so their client can find its way back. Miss enough turns and a bot
+		// takes over. Quitting on purpose is LEAVE_MATCH.
+		if s.phase != phasePlaying {
+			clearCurrentMatch(ctx, logger, nk, p.GetUserId())
+		}
 		s.seats[idx].connected = false
 		s.seats[idx].presence = nil
 		logger.WithField("seat", idx).Info("player disconnected")
@@ -237,7 +245,7 @@ func (m *UnoMatch) MatchLoop(ctx context.Context, logger runtime.Logger, db *sql
 		return nil
 	}
 
-	s.handleMessages(logger, dispatcher, messages)
+	s.handleMessages(ctx, logger, nk, dispatcher, messages)
 
 	if s.labelDirty {
 		if err := dispatcher.MatchLabelUpdate(s.label()); err != nil {
@@ -371,8 +379,6 @@ func (s *MatchState) tickPlaying(ctx context.Context, logger runtime.Logger, nk 
 		return
 	}
 
-	s.tickAwaySeats(ctx, logger, nk, dispatcher)
-
 	// A short breath after every move, so clients can finish animating and
 	// three bots in a row do not resolve in one frame.
 	if s.gapTicks > 0 {
@@ -404,22 +410,6 @@ func (s *MatchState) tickPlaying(ctx context.Context, logger runtime.Logger, nk 
 	s.turnTicks--
 	if s.turnTicks <= 0 {
 		s.timeOutTurn(ctx, logger, nk, dispatcher)
-	}
-}
-
-// tickAwaySeats gives a seat to a bot once its player has been gone too long,
-// even if their turn has not come round again.
-func (s *MatchState) tickAwaySeats(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher) {
-	for i, st := range s.seats {
-		if st.kind != KindHuman || st.connected {
-			s.awayTicks[i] = 0
-			continue
-		}
-
-		s.awayTicks[i]++
-		if s.awayTicks[i]*msPerTick >= s.cfg.DisconnectBotMs {
-			s.giveSeatToBot(ctx, logger, nk, dispatcher, i, RemovedDisconnected)
-		}
 	}
 }
 
@@ -521,15 +511,20 @@ func (s *MatchState) giveSeatToBot(ctx context.Context, logger runtime.Logger, n
 
 	presence := s.seats[seat].presence
 	userID := s.seats[seat].userID
+	wasAway := !s.seats[seat].connected
+	// The bot plays on under the same name and avatar, and nobody is told:
+	// players shouldn't be able to tell a bot from a person.
 	s.seats[seat].kind = KindBot
 	s.seats[seat].presence = nil
 	s.seats[seat].connected = true
 	s.missedTurns[seat] = 0
-	s.awayTicks[seat] = 0
 	clearCurrentMatch(ctx, logger, nk, userID) // so their client goes home, not back here
 
 	logger.WithField("seat", seat).WithField("reason", reason).Info("bot took over the seat")
-	s.broadcastEvents(logger, dispatcher, []EventMsg{{Type: EvSeatControl, Seat: seat, Kind: KindBot}})
+	if wasAway {
+		// The seat was shown as away; its "player" is back now.
+		s.broadcastEvents(logger, dispatcher, []EventMsg{connectionEvent(seat, true)})
+	}
 
 	if presence != nil {
 		if err := dispatcher.MatchKick([]runtime.Presence{presence}); err != nil {
@@ -540,7 +535,7 @@ func (s *MatchState) giveSeatToBot(ctx context.Context, logger runtime.Logger, n
 
 // handleMessages processes what clients sent this tick. Card play arrives with
 // the next chunk of work; until then only REQUEST_STATE does anything.
-func (s *MatchState) handleMessages(logger runtime.Logger, dispatcher runtime.MatchDispatcher, messages []runtime.MatchData) {
+func (s *MatchState) handleMessages(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, dispatcher runtime.MatchDispatcher, messages []runtime.MatchData) {
 	for _, m := range messages {
 		seat := s.seatOfUser(m.GetUserId())
 		if seat < 0 {
@@ -558,6 +553,13 @@ func (s *MatchState) handleMessages(logger runtime.Logger, dispatcher runtime.Ma
 
 		case OpExtendTurn:
 			s.handleExtendTurn(logger, dispatcher, seat, m)
+
+		case OpLeaveMatch:
+			// Quitting on purpose: a bot takes the seat now rather than after
+			// missed turns. In the lobby, closing the socket is enough.
+			if s.phase == phasePlaying {
+				s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, RemovedLeft)
+			}
 
 		default:
 			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, "unknown opcode")
@@ -607,7 +609,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 	for i, st := range s.seats {
 		msg.Seats = append(msg.Seats, GameSeat{
 			Seat:      i,
-			Kind:      st.kind,
+			Kind:      publicKind(st.kind),
 			Name:      st.name,
 			Avatar:    st.avatar,
 			CardCount: len(g.Players[i].Hand),
@@ -700,9 +702,9 @@ func (s *MatchState) broadcastLobby(logger runtime.Logger, dispatcher runtime.Ma
 		Seats:           make([]LobbySeat, 0, seatCount),
 	}
 	for i, seat := range s.seats {
-		ls := LobbySeat{Seat: i, Kind: seat.kind}
+		ls := LobbySeat{Seat: i, Kind: publicKind(seat.kind)}
 		if seat.kind != KindEmpty {
-			ls.UserID = seat.userID
+			ls.UserID = seat.publicID
 			ls.Name = seat.name
 			ls.Avatar = seat.avatar
 			ls.Connected = seat.kind == KindBot || seat.connected
@@ -804,10 +806,28 @@ func (s *MatchState) newBotSeat() seat {
 
 	return seat{
 		kind:      KindBot,
+		publicID:  s.fakeUserID(),
 		name:      names.GenerateUnused(s.rng, usedNames),
 		avatar:    avatar,
 		connected: true,
 	}
+}
+
+// fakeUserID looks like a Nakama user id, so a bot's lobby seat looks like
+// anyone else's.
+func (s *MatchState) fakeUserID() string {
+	return fmt.Sprintf("%08x-%04x-4%03x-%04x-%012x",
+		s.rng.Uint32(), s.rng.Uint32()&0xffff, s.rng.Uint32()&0xfff,
+		0x8000|s.rng.Uint32()&0x3fff, s.rng.Uint64()&0xffffffffffff)
+}
+
+// publicKind is the seat kind other clients are told: a bot is reported as a
+// human, so nobody can tell them apart.
+func publicKind(kind string) string {
+	if kind == KindEmpty {
+		return KindEmpty
+	}
+	return KindHuman
 }
 
 // label is what find_match searches over: open lobbies with room.

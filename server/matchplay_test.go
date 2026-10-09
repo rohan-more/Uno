@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/heroiclabs/nakama-common/runtime"
@@ -32,7 +33,6 @@ func TestMatchPlays_AllBotsFinishTheGame(t *testing.T) {
 	s.seats[0].presence = fakePresence{userID: "u0"}
 	s.seats[2] = seat{kind: KindBot, name: "Bot2", connected: true}
 	s.cfg.MissedTurnsForBot = 1 << 30
-	s.cfg.DisconnectBotMs = 1 << 30
 	d := &fakeDispatcher{}
 
 	playMatch(t, s, d, 20000)
@@ -99,8 +99,11 @@ func TestMissedTurns_HandSeatToBot(t *testing.T) {
 	if s.seats[0].kind != KindBot {
 		t.Fatal("seat 0 should have been given to a bot after missing turns")
 	}
-	if got := d.events(EvSeatControl); len(got) != 1 || got[0].Seat != 0 || got[0].Kind != KindBot {
-		t.Errorf("SEAT_CONTROL events = %+v", got)
+	if len(d.events(EvSeatControl)) != 0 {
+		t.Error("a takeover must not be announced: bots are disguised")
+	}
+	if s.seats[0].name != "Human0" {
+		t.Errorf("the bot should keep the player's name, got %q", s.seats[0].name)
 	}
 	if len(d.kicked) != 1 || d.kicked[0].GetUserId() != "u0" {
 		t.Errorf("replaced player should be kicked, kicked = %+v", d.kicked)
@@ -182,6 +185,114 @@ func TestPendingDraw_TakenAtOnceWhenNothingStacks(t *testing.T) {
 	}
 }
 
+func TestLeaveMatch_BotTakesTheSeatAtOnce(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	presence := fakePresence{userID: "u0"}
+	s.seats[0].presence = presence
+	s.seats[2].presence = fakePresence{userID: "u2"} // someone stays, so the match goes on
+	d := &fakeDispatcher{}
+
+	s.handleMessages(context.Background(), testLogger{}, nil, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpLeaveMatch}})
+
+	if s.seats[0].kind != KindBot {
+		t.Fatal("LEAVE_MATCH should hand the seat to a bot straight away")
+	}
+	if s.seats[0].name != "Human0" {
+		t.Errorf("the bot should keep the player's name, got %q", s.seats[0].name)
+	}
+	assertRemoved(t, d, "u0", RemovedLeft)
+	if len(d.kicked) != 1 || d.kicked[0].GetUserId() != "u0" {
+		t.Errorf("the leaver should be kicked, kicked = %+v", d.kicked)
+	}
+	if len(d.events(EvSeatControl)) != 0 {
+		t.Error("a takeover must not be announced: bots are disguised")
+	}
+}
+
+func TestDisconnect_HoldsTheSeatForThreeMissedTurns(t *testing.T) {
+	s := dealtMatch(t)
+	presence := fakePresence{userID: "u0"}
+	s.seats[0].presence = presence
+	s.seats[2].presence = fakePresence{userID: "u2"}
+	d := &fakeDispatcher{}
+	ctx, logger := context.Background(), testLogger{}
+	for s.preMatchTicks > 0 {
+		s.tickPlaying(ctx, logger, nil, d)
+	}
+
+	// The socket closes: no telling a drop from a quit, so the seat is held.
+	(&UnoMatch{}).MatchLeave(ctx, logger, nil, nil, d, 0, s, []runtime.Presence{presence})
+	if s.seats[0].kind != KindHuman || s.seats[0].connected {
+		t.Fatalf("a dropped player keeps their seat, marked away: %+v", s.seats[0])
+	}
+
+	timeouts := 0
+	for tick := 0; tick < 5000 && s.seats[0].kind == KindHuman; tick++ {
+		before := len(d.events(EvTurnTimedOut))
+		s.tickPlaying(ctx, logger, nil, d)
+		for _, e := range d.events(EvTurnTimedOut)[before:] {
+			if e.Seat == 0 {
+				timeouts++
+			}
+		}
+	}
+
+	if s.seats[0].kind != KindBot {
+		t.Fatal("a bot should take the seat after enough missed turns")
+	}
+	if timeouts != s.cfg.MissedTurnsForBot {
+		t.Errorf("taken over after %d missed turns, want %d", timeouts, s.cfg.MissedTurnsForBot)
+	}
+
+	// The seat was shown as away; it should look connected again.
+	back := false
+	for _, e := range d.events(EvPlayerConnection) {
+		if e.Seat == 0 && e.Connected != nil && *e.Connected {
+			back = true
+		}
+	}
+	if !back {
+		t.Error("after a takeover the seat should be shown as connected again")
+	}
+}
+
+func TestSeatKinds_BotsLookLikePlayers(t *testing.T) {
+	// During play: snapshots never say "bot".
+	s := dealtMatch(t)
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	d := &fakeDispatcher{}
+	s.sendGameState(testLogger{}, d, 0)
+	for _, msg := range d.sent {
+		if msg.opCode == OpGameState && strings.Contains(string(msg.data), `"bot"`) {
+			t.Errorf("GAME_STATE gives bots away: %s", msg.data)
+		}
+	}
+
+	// In the lobby: bots look like players, user id and all.
+	lobby := newLobby()
+	lobby.seats[0] = seat{kind: KindHuman, userID: "u0", publicID: "u0", name: "Human0", connected: true, presence: fakePresence{userID: "u0"}}
+	lobby.seats[1] = lobby.newBotSeat()
+	d = &fakeDispatcher{}
+	lobby.broadcastLobby(testLogger{}, d)
+
+	var msg LobbyStateMsg
+	for _, sent := range d.sent {
+		if sent.opCode == OpLobbyState {
+			if err := json.Unmarshal(sent.data, &msg); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(msg.Seats) != seatCount {
+		t.Fatalf("no LOBBY_STATE sent")
+	}
+	bot := msg.Seats[1]
+	if bot.Kind != KindHuman || bot.UserID == "" || !bot.Connected {
+		t.Errorf("a bot in the lobby should look like a player: %+v", bot)
+	}
+}
+
 // drewWild puts seat 0 on turn holding a freshly drawn wild it may play.
 func drewWild(t *testing.T) *MatchState {
 	t.Helper()
@@ -203,7 +314,7 @@ func TestExtendTurn_AfterDrawingAWild(t *testing.T) {
 	logger := testLogger{}
 
 	s.turnTicks = 3 // nearly out of time
-	s.handleMessages(logger, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
+	s.handleMessages(context.Background(), logger, nil, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
 
 	if s.turnTicks != s.cfg.TurnMs/msPerTick {
 		t.Errorf("turnTicks = %d, want a full turn of %d", s.turnTicks, s.cfg.TurnMs/msPerTick)
@@ -214,7 +325,7 @@ func TestExtendTurn_AfterDrawingAWild(t *testing.T) {
 
 	// A second extension in the same turn is refused and changes nothing.
 	s.turnTicks = 3
-	s.handleMessages(logger, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
+	s.handleMessages(context.Background(), logger, nil, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
 	if s.turnTicks != 3 {
 		t.Error("a second extension in one turn should be refused")
 	}
@@ -231,7 +342,7 @@ func TestExtendTurn_RefusedWithoutADrawnWild(t *testing.T) {
 	d := &fakeDispatcher{}
 
 	s.turnTicks = 3
-	s.handleMessages(testLogger{}, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
+	s.handleMessages(context.Background(), testLogger{}, nil, d, []runtime.MatchData{fakeMatchData{fakePresence: presence, opCode: OpExtendTurn}})
 
 	if s.turnTicks != 3 || len(d.events(EvTurnExtended)) != 0 {
 		t.Error("extending without a drawn wild should change nothing")

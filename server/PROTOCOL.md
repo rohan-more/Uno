@@ -68,14 +68,16 @@ has time to join.
 - **Nobody joins after the match has started.**
 
 **op 100 `LOBBY_STATE`** — broadcast on every lobby change. `avatar` indexes the
-client's AvatarLibrary; bots are always `connected`:
+client's AvatarLibrary. **Bots are disguised:** a bot's seat says `"human"`,
+has a made-up `userId` and is always `connected`, so clients see only
+`"human"` or `"empty"`:
 
 ```json
 {
   "countdownMsLeft": 8000,
   "seats": [
     { "seat": 0, "kind": "human", "userId": "u-…", "name": "BraveStormFalcon42", "avatar": 7, "connected": true },
-    { "seat": 1, "kind": "bot",   "name": "QuietRiverOtter18", "avatar": 22, "connected": true },
+    { "seat": 1, "kind": "human", "userId": "3f2c…", "name": "QuietRiverOtter18", "avatar": 22, "connected": true },
     { "seat": 2, "kind": "empty" },
     { "seat": 3, "kind": "empty" }
   ]
@@ -100,7 +102,7 @@ reconnect, and in reply to `REQUEST_STATE`:
   "you": 2,
   "seats": [
     { "seat": 0, "kind": "human", "name": "BraveStormFalcon42", "cardCount": 7, "place": 0, "connected": true },
-    { "seat": 1, "kind": "bot",   "name": "QuietRiverOtter18",  "cardCount": 7, "place": 0, "connected": true },
+    { "seat": 1, "kind": "human", "name": "QuietRiverOtter18",  "cardCount": 7, "place": 0, "connected": true },
     { "seat": 2, "kind": "human", "name": "SwiftEmberTiger07",  "cardCount": 7, "place": 0, "connected": true },
     { "seat": 3, "kind": "human", "name": "CalmDuskHeron55",    "cardCount": 7, "place": 0, "connected": true }
   ],
@@ -136,6 +138,7 @@ reconnect, and in reply to `REQUEST_STATE`:
 | 4 | `PASS` | `{}` | Your turn, after drawing a playable card |
 | 5 | `REQUEST_STATE` | `{}` | Any time; the server replies with `GAME_STATE` |
 | 6 | `EXTEND_TURN` | `{}` | Your turn, holding a drawn **wild** you are about to play, once per turn. Restarts your clock so choosing its color gets a full turn |
+| 7 | `LEAVE_MATCH` | `{}` | During play: quit now. A bot takes the seat at once and you get `REMOVED` with `LEFT`. In the lobby, just leave the match |
 
 There is no start action: the countdown starts the match. The color for a wild
 is chosen **before** sending, so a play is always one message.
@@ -167,7 +170,6 @@ color for a drawn wild is a second choice in the same turn, so the client sends
 | `TURN_CHANGED` | `seat, turnMs, pendingDraw` | `turnMs` is the full turn length, for bots too (they act after `botThinkMs`) |
 | `TURN_EXTENDED` | `seat, turnMs` | `EXTEND_TURN` was accepted: that seat's clock restarts at `turnMs` |
 | `TURN_TIMED_OUT` | `seat` | Precedes the automatic draw's events |
-| `SEAT_CONTROL` | `seat, kind` | Only ever `human` → `bot`; permanent |
 | `PLAYER_CONNECTION` | `seat, connected` | Grey out the nameplate |
 | `PLAYER_FINISHED` | `seat, place` | Play continues among the rest |
 | `GAME_OVER` | `ranking` | Seats in finishing order |
@@ -188,7 +190,6 @@ color for a drawn wild is a second choice in the same turn, so the client sends
 | `ALREADY_DREW` | Two draws in one turn |
 | `CANNOT_PASS` | Passed without having drawn a playable card |
 | `GAME_NOT_STARTED` / `GAME_OVER` | Action outside the playing phase |
-| `SEAT_TAKEN_BY_BOT` | Rejoined after being replaced |
 | `BAD_MESSAGE` | Unknown opcode or unreadable JSON |
 | `CANNOT_EXTEND` | `EXTEND_TURN` twice in a turn, or without a drawn wild |
 
@@ -204,8 +205,8 @@ before they are kicked (or the match closes, if they were the last human):
 
 | Reason | Cause |
 |---|---|
-| `MISSED_TURNS` | Ran out of time on 2 turns in a row |
-| `DISCONNECTED` | Gone longer than `disconnectBotMs`; usually never delivered, since they are offline |
+| `MISSED_TURNS` | Ran out of time on 3 turns in a row, connected or not |
+| `LEFT` | Sent `LEAVE_MATCH` |
 
 Nothing else follows. The client should say why and go back to the home screen.
 
@@ -225,21 +226,27 @@ Nothing else follows. The client should say why and go back to the home screen.
   ] }
   ```
 
-- **A bot takes the seat** on whichever comes first:
-  - **2 missed turns in a row** (acting in time resets the counter), or
-  - **15 s disconnected**, so a drop right after one's turn is noticed before the
-    turn comes round again.
+- **A bot takes the seat** after either:
+  - **3 missed turns in a row**, for any reason (acting in time resets the
+    counter). A closed socket is not a reason by itself: the server can't tell
+    a dropped connection from a quit, so a disconnected player's seat is held
+    and their turns time out like anyone else's.
+  - **`LEAVE_MATCH`** (op 7), which hands the seat over at once.
   - Quick matches (`quick_match`, for testing) skip the missed-turns rule: an
     idle player keeps timing out but keeps their seat.
+- **Bots are disguised.** A bot that takes over keeps the player's name and
+  avatar, and nobody is told. If the seat was shown as away, everyone gets
+  `PLAYER_CONNECTION connected:true`.
 - **The player is told first** with `REMOVED` (op 104), whichever way the seat
   is lost.
 - **The last human leaving ends the match.** There is no point handing the final
   seat to a bot and playing to an empty room, so the match closes instead.
 - **Takeover is permanent.** The player never gets the seat back. Reconnecting
-  or relaunching lands them on the home screen; they do not spectate. Rejoining
-  is refused with `SEAT_TAKEN_BY_BOT`.
-- **Reconnect inside the window:** the client rejoins the same match id (see
-  `current_match`) and receives a fresh `GAME_STATE`. Others get
+  or relaunching lands them on the home screen; they do not spectate, and
+  joining the match again is refused.
+- **Reconnect before the takeover:** a dropped player keeps their
+  `current_match` record, so the client (reconnecting by itself, or relaunched)
+  rejoins the same match id and receives a fresh `GAME_STATE`. Others get
   `PLAYER_CONNECTION connected:true`.
 - **Bot turns** have no timer; the bot acts after `botThinkMs` (default 1200 ms).
 - **Every move is followed by `turnGapMs`** before the next seat may act, so a
@@ -267,8 +274,7 @@ key:        match
   "preMatchMs": 3000,
   "turnMs": 8000,
   "turnGapMs": 500,
-  "missedTurnsForBot": 2,
-  "disconnectBotMs": 15000,
+  "missedTurnsForBot": 3,
   "botThinkMs": 1200,
   "emptyLobbyGraceMs": 10000,
   "noHumansCloseMs": 10000,
@@ -289,8 +295,9 @@ key:        match
   carry the current `seq`.
 - Client rules: `seq == last+1` → animate; `seq <= last` → ignore (duplicate);
   `seq > last+1` → send `REQUEST_STATE` and redraw from the snapshot.
-- **RPC `current_match {}` → `{ "matchId": "…" }` or empty.** Lets a relaunched
-  client find the match it still holds a human seat in. Empty means home screen.
+- **RPC `current_match {}` → `{ "matchId": "…", "phase": "playing" }` or empty.**
+  Lets a relaunched or reconnected client find the match it still holds a human
+  seat in. Rejoin only while `phase` is `playing`; empty means home screen.
 
 ## 10. End of the match
 

@@ -10,6 +10,7 @@ const (
 	OpPass         int64 = 4
 	OpRequestState int64 = 5
 	OpExtendTurn   int64 = 6
+	OpLeaveMatch   int64 = 7
 
 	// server -> client
 	OpLobbyState int64 = 100
@@ -120,8 +121,8 @@ type RemovedMsg struct {
 
 // Why a player lost their seat.
 const (
-	RemovedMissedTurns  = "MISSED_TURNS"
-	RemovedDisconnected = "DISCONNECTED"
+	RemovedMissedTurns = "MISSED_TURNS" // includes being disconnected through them
+	RemovedLeft        = "LEFT"         // LEAVE_MATCH
 )
 
 // Event type names, as sent to clients.
