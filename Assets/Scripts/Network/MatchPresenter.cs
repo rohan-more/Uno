@@ -436,6 +436,13 @@ public class MatchPresenter : MonoBehaviour
             await Connection.SendMatchStateAsync(UnoOpCodes.ExtendTurn);
     }
 
+    /// <summary>Quits the match: a bot takes the seat at once and REMOVED (LEFT) comes back.</summary>
+    public async Task LeaveAsync()
+    {
+        if (Connection != null)
+            await Connection.SendMatchStateAsync(UnoOpCodes.LeaveMatch);
+    }
+
     /// <summary>Asks for a fresh snapshot, e.g. after an error or a missed batch.</summary>
     public async Task RequestStateAsync()
     {

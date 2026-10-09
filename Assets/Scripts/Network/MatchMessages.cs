@@ -97,8 +97,8 @@ public class MatchRemovedMsg
 
 public static class RemovedReasons
 {
-    public const string MissedTurns = "MISSED_TURNS";
-    public const string Disconnected = "DISCONNECTED";
+    public const string MissedTurns = "MISSED_TURNS"; // connected or not
+    public const string Left = "LEFT";                // we sent LEAVE_MATCH
 }
 
 /// <summary>Body of a PLAY_CARD message. Color is required for wild cards.</summary>
