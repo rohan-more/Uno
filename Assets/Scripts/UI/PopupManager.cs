@@ -18,7 +18,9 @@ public class PopupManager : MonoBehaviour, IPopupService
 
     private void Awake()
     {
-        if (Instance != null)
+        // Instance is an interface, so "!= null" can't see that the manager
+        // from a previous scene load has been destroyed: ask Unity instead.
+        if (Instance is PopupManager existing && existing != null && existing != this)
         {
             Destroy(gameObject);
             return;
@@ -58,6 +60,12 @@ public class PopupManager : MonoBehaviour, IPopupService
                 activePopup = null;
             }
         );
+    }
+
+    private void OnDestroy()
+    {
+        if (ReferenceEquals(Instance, this))
+            Instance = null;
     }
 
     public void CloseActive()
