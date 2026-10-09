@@ -1,6 +1,6 @@
 # Coins, stakes and game over: plan
 
-Status: **agreed, not started.** Built on branch `Rohan/GameOverRewards`, one
+Status: **phase 1 built, being tested.** Built on branch `Rohan/GameOverRewards`, one
 phase at a time. Every number here is a server setting, tunable from the Nakama
 console like the turn timer.
 
