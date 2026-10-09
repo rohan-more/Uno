@@ -60,6 +60,14 @@ public class MatchView : MonoBehaviour
     [SerializeField] private TMP_Text removedText;
     [SerializeField] private float removedReturnDelay = 3f;
 
+    [Header("Leaving (optional)")]
+    [Tooltip("Quits the match after asking with the ConfirmAction popup. A bot takes your seat at once.")]
+    [SerializeField] private Button leaveButton;
+
+    [Header("Connection (optional)")]
+    [Tooltip("Shown while the connection is lost and the client is reconnecting.")]
+    [SerializeField] private GameObject reconnectingIndicator;
+
     // A move we sent that the server hasn't answered yet; blocks double sends
     private bool awaitingServer;
 
@@ -108,6 +116,17 @@ public class MatchView : MonoBehaviour
 
         if (passButton != null)
             passButton.onClick.AddListener(Pass);
+
+        if (leaveButton != null)
+            leaveButton.onClick.AddListener(LeavePressed);
+
+        if (NakamaConnection.Instance != null)
+        {
+            NakamaConnection.Instance.OnDisconnected += HandleConnectionLost;
+            NakamaConnection.Instance.OnReconnected += HandleReconnected;
+            NakamaConnection.Instance.OnMatchLost += HandleMatchLost;
+        }
+        ShowReconnecting(NakamaConnection.Instance != null && NakamaConnection.Instance.IsReconnecting);
     }
 
     private void OnDisable()
@@ -133,6 +152,16 @@ public class MatchView : MonoBehaviour
 
         if (passButton != null)
             passButton.onClick.RemoveListener(Pass);
+
+        if (leaveButton != null)
+            leaveButton.onClick.RemoveListener(LeavePressed);
+
+        if (NakamaConnection.Instance != null)
+        {
+            NakamaConnection.Instance.OnDisconnected -= HandleConnectionLost;
+            NakamaConnection.Instance.OnReconnected -= HandleReconnected;
+            NakamaConnection.Instance.OnMatchLost -= HandleMatchLost;
+        }
     }
 
     // ---- presenter events ----
@@ -400,8 +429,8 @@ public class MatchView : MonoBehaviour
         if (removedPanel != null)
             removedPanel.SetActive(true);
         if (removedText != null)
-            removedText.text = reason == RemovedReasons.Disconnected
-                ? "You were disconnected for too long. A bot took your seat."
+            removedText.text = reason == RemovedReasons.Left
+                ? "You left the match."
                 : "You missed too many turns. A bot took your seat.";
 
         StartCoroutine(ReturnHomeAfterDelay());
@@ -410,7 +439,11 @@ public class MatchView : MonoBehaviour
     private IEnumerator ReturnHomeAfterDelay()
     {
         yield return new WaitForSeconds(removedReturnDelay);
+        ReturnHome();
+    }
 
+    private void ReturnHome()
+    {
         if (NakamaConnection.Instance != null)
             _ = NakamaConnection.Instance.LeaveMatchAsync();
 
@@ -419,6 +452,70 @@ public class MatchView : MonoBehaviour
             loader.ReturnHome();
         else
             Debug.LogError("No MatchSceneLoader to go home with");
+    }
+
+    // ---- leaving ----
+
+    private void LeavePressed()
+    {
+        if (removed || PopupManager.Instance == null)
+            return;
+
+        // Replaces any choice popup that's up; the turn timer keeps running meanwhile
+        PopupManager.Instance.Show(PopupType.ConfirmAction, new ConfirmChoice
+        {
+            Message = "You'll lose the coins you wagered on it.",
+            ConfirmLabel = "Leave",
+            OnConfirm = LeaveConfirmed,
+            OnCancel = RefreshControls, // reopens Play / Keep if Leave replaced it
+        });
+    }
+
+    private void LeaveConfirmed()
+    {
+        if (removed)
+            return;
+
+        _ = presenter.LeaveAsync();
+        StartCoroutine(LeaveFallback());
+    }
+
+    // REMOVED (LEFT) normally comes straight back and sends us home. If it
+    // doesn't, e.g. the connection is down, go home anyway; the seat then times
+    // out to a bot like any abandoned seat.
+    private IEnumerator LeaveFallback()
+    {
+        yield return new WaitForSeconds(3f);
+        if (!removed)
+            ReturnHome();
+    }
+
+    // ---- connection ----
+
+    private void HandleConnectionLost(string reason)
+    {
+        ShowReconnecting(true);
+        RefreshControls();
+    }
+
+    // The server sends a fresh GAME_STATE once we've rejoined, which redraws everything.
+    private void HandleReconnected() => ShowReconnecting(false);
+
+    // Back online but the match is gone (it closed while we were away, or the
+    // server restarted): nothing more will arrive, so go home.
+    private void HandleMatchLost()
+    {
+        if (removed)
+            return;
+        removed = true;
+        Debug.LogWarning("The match ended while we were disconnected; going home");
+        ReturnHome();
+    }
+
+    private void ShowReconnecting(bool show)
+    {
+        if (reconnectingIndicator != null)
+            reconnectingIndicator.SetActive(show);
     }
 
     // ---- input ----
@@ -515,7 +612,9 @@ public class MatchView : MonoBehaviour
 
     private bool OwesCardsWithNoAnswer() => State.PendingDraw > 0 && presenter.PlayableCards().Count == 0;
 
-    private bool CanAct() => !removed && State.IsYourTurn && !awaitingServer && pendingWild == null;
+    // No moves while reconnecting: they'd be dropped, and the snapshot on rejoin redraws everything
+    private bool CanAct() => !removed && (NakamaConnection.Instance == null || NakamaConnection.Instance.IsConnected)
+                             && State.IsYourTurn && !awaitingServer && pendingWild == null;
 
     private async void Send(System.Threading.Tasks.Task send)
     {
