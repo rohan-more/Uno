@@ -25,7 +25,6 @@ public class HandView : MonoBehaviour
 
     private readonly List<CardInstance> hand = new();
     private readonly List<CardItem> items = new();
-    private List<RectTransform> cardTransforms = new();
     public CardItem GetCardItem(CardInstance instance)
     {
         foreach (var t in items)
@@ -51,28 +50,6 @@ public class HandView : MonoBehaviour
             cardItem.SetInteractable(interactable);
         }*/
     }
-
-    public void CheckValidCards(RulesEngine rulesEngine, GameState gameState, PlayerState playerState)
-    {
-        cardTransforms.Clear();
-        for (int i = 0; i < hand.Count; i++)
-        {
-            var instance = hand[i];
-            var item = items[i];
-            cardTransforms.Add(item.RectTransform);
-            bool canPlay = rulesEngine.CanPlayCard(instance, gameState, playerState, out var matchedRule);
-
-            item.SetEligible(canPlay);
-
-            if (canPlay)
-            {
-                //Debug.Log($"[HAND] Card {instance.CardId} is VALID (rule: {matchedRule.name})");
-            }
-        }
-        
-        layout.Layout(cardTransforms);
-    }
-
 
     /// <summary>
     /// Opponent hands: we only know how many cards they hold, so show that many backs.
