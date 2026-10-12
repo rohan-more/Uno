@@ -14,7 +14,7 @@ using UnityEngine.UI;
 /// </summary>
 public class DrawPileView : MonoBehaviour, IPointerClickHandler
 {
-    [SerializeField] private Sprite cardBackSprite;
+    private Sprite cardBack; // set by SetCardBack
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Stack")]
@@ -47,10 +47,18 @@ public class DrawPileView : MonoBehaviour, IPointerClickHandler
             rect.anchoredPosition = layerOffset * i;
 
             var image = go.GetComponent<Image>();
-            image.sprite = cardBackSprite;
+            image.sprite = cardBack; // may still be null: SetCardBack can come before or after Awake
             image.preserveAspect = true;
             layers.Add(image);
         }
+    }
+
+    /// <summary>The back the stack is drawn with; MatchView passes CardDatabase.CardBack.</summary>
+    public void SetCardBack(Sprite back)
+    {
+        cardBack = back;
+        foreach (var layer in layers)
+            layer.sprite = back;
     }
 
     /// <summary>Shows how many cards are left to draw.</summary>

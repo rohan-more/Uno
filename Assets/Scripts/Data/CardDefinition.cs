@@ -29,8 +29,7 @@ public class CardDefinition
     public int Number;                // Only valid for Number cards
 
     [Header("Visuals")]
-    public Sprite FrontSprite;
-    public Sprite BackSprite;
+    public Sprite FrontSprite; // the back is shared: CardDatabase.CardBack
 
     [Header("UI Metadata")]
     public string DisplayName;         // Optional: "Red 3"

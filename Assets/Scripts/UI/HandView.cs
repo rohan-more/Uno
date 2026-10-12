@@ -19,7 +19,6 @@ public class HandView : MonoBehaviour
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Opponent")]
-    [SerializeField] private Sprite cardBackSprite;
     [SerializeField] private TMP_Text cardCountText;
 
     public int CardCount => hand.Count;
@@ -121,7 +120,7 @@ public class HandView : MonoBehaviour
             var item = Instantiate(cardPrefab, transform);
 
             bool faceDown = mode == HandViewMode.Opponent;
-            item.Bind(instance, faceDown ? cardBackSprite : def?.FrontSprite, actionBus, playerIndex: 0);
+            item.Bind(instance, faceDown ? database.CardBack : def?.FrontSprite, actionBus, playerIndex: 0);
             item.SetClickable(mode == HandViewMode.Human);
             items.Add(item);
         }

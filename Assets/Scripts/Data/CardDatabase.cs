@@ -36,6 +36,11 @@ public class CardDatabase : ScriptableObject
 {
     public List<CardDefinition> Cards;
 
+    [Tooltip("The one back every card shares. Anything showing a face-down card reads it from here.")]
+    [SerializeField] private Sprite cardBack;
+
+    public Sprite CardBack => cardBack;
+
     private Dictionary<string, CardDefinition> lookup;
 
     public void Initialize()

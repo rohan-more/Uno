@@ -27,8 +27,6 @@ public class MatchView : MonoBehaviour
     [Header("Draw deck")]
     [Tooltip("Optional: the face-down deck. Draws fly from it (or from CardProxyView's Deck seat point if unset).")]
     [SerializeField] private DrawPileView drawPile;
-    [Tooltip("Back shown on cards flying from the deck.")]
-    [SerializeField] private Sprite cardBackSprite;
     [Tooltip("Roughly how long a whole draw takes to animate, however many cards.")]
     [SerializeField] private float drawDuration = 0.9f;
 
@@ -95,6 +93,9 @@ public class MatchView : MonoBehaviour
 
     private void OnEnable()
     {
+        if (drawPile != null)
+            drawPile.SetCardBack(database.CardBack);
+
         presenter.OnSnapshot += HandleSnapshot;
         presenter.OnCardPlayed += HandleCardPlayed;
         presenter.OnCardsDrawn += HandleCardsDrawn;
@@ -273,7 +274,7 @@ public class MatchView : MonoBehaviour
             // Your own cards fly face up; everyone else's stay hidden
             var sprite = drawn.Seat == State.YourSeat && startCount + i < State.Hand.Count
                 ? FrontSprite(State.Hand[startCount + i])
-                : cardBackSprite;
+                : database.CardBack;
 
             bool landed = false;
             if (drawPile != null)
@@ -311,7 +312,7 @@ public class MatchView : MonoBehaviour
         RefreshControls();
 
         bool done = false;
-        cardProxy.Fly(cardBackSprite, drawPile.Point, drawnCardHover, 1f, () => done = true);
+        cardProxy.Fly(database.CardBack, drawPile.Point, drawnCardHover, 1f, () => done = true);
         drawPile.SetCount(State.DeckCount);
         while (!done)
             yield return null;
