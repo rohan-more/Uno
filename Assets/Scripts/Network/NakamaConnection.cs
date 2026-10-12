@@ -31,6 +31,11 @@ public class NakamaConnection : MonoBehaviour
              "with no 12 second countdown. Turn off for a real build.")]
     [SerializeField] private bool instantMatch;
 
+    [Tooltip("F1 opens testing tools (drop the connection, and later grant coins). Turn off for a real build.")]
+    [SerializeField] private bool debugMenu = true;
+
+    public bool DebugMenuEnabled => debugMenu;
+
     private IClient _client;
     private ISession _session;
     private ISocket _socket;
@@ -486,6 +491,23 @@ public class NakamaConnection : MonoBehaviour
 
         Debug.Log($"Rejoining match in progress {matchId}");
         return await JoinMatchAsync(matchId);
+    }
+
+    /// <summary>
+    /// Testing: closes the socket as if the network died, so the reconnect and
+    /// rejoin path can be tried from one window. See DebugMenu.
+    /// </summary>
+    public async Task DebugDropConnectionAsync()
+    {
+        if (_socket == null || !_socket.IsConnected)
+            return;
+
+        Debug.LogWarning("Debug: dropping the connection");
+        await _socket.CloseAsync();
+
+        // In case closing it ourselves doesn't raise Closed
+        if (!IsReconnecting)
+            HandleSocketClosed("debug drop");
     }
 
     private void OnApplicationQuit()
