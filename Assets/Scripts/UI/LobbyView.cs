@@ -13,7 +13,7 @@ public class LobbyView : MonoBehaviour
     [Header("Profile")]
     [SerializeField] private TMP_Text nameText;
     [SerializeField] private Image avatarImage;
-    [SerializeField] private AvatarLibrary avatars;
+    private static AvatarLibrary avatars => GameAssets.Avatars;
 
     [Header("Buttons")]
     [SerializeField] private Button playButton;
@@ -75,8 +75,11 @@ public class LobbyView : MonoBehaviour
             return;
         }
 
-        // Boot may already have connected; only connect if it hasn't.
+        // Load the card and avatar art while connecting. Boot may already have
+        // connected; only connect if it hasn't.
+        var assets = GameAssets.PreloadAsync();
         var connected = Connection.IsConnected || await Connection.ConnectAsync();
+        await assets;
         if (!connected)
         {
             SetStatus("Couldn't reach the server");

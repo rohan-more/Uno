@@ -15,7 +15,7 @@ public class MatchView : MonoBehaviour
 {
     [SerializeField] private MatchPresenter presenter;
     [SerializeField] private MatchSeatsView seatsView;
-    [SerializeField] private CardDatabase database;
+    private static CardDatabase database => GameAssets.Cards;
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Table")]

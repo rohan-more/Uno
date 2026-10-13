@@ -41,7 +41,7 @@ public class MatchSeatsView : MonoBehaviour
     }
 
     [SerializeField] private MatchPresenter presenter;
-    [SerializeField] private AvatarLibrary avatars;
+    private static AvatarLibrary avatars => GameAssets.Avatars;
 
     [Tooltip("Seat panels in turn order: 0 is you, 1 is the player after you.")]
     [SerializeField] private SeatPanel[] panels = new SeatPanel[4];

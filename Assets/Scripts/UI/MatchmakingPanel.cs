@@ -22,8 +22,9 @@ public class MatchmakingPanel : MonoBehaviour
     [SerializeField] private Slot[] slots = new Slot[4];
 
 
+    private static AvatarLibrary avatars => GameAssets.Avatars;
+
     [Header("Look")]
-    [SerializeField] private AvatarLibrary avatars;
     [SerializeField] private string searchingLabel = "Searching…";
     [SerializeField] private int maxNameLength = 12;
 

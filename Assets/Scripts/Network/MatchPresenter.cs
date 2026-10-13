@@ -68,7 +68,7 @@ public class MatchPresenter : MonoBehaviour
              "call can't freeze the match.")]
     [SerializeField] private float stepTimeout = 3f;
 
-    [SerializeField] private CardDatabase database;
+    private static CardDatabase database => GameAssets.Cards;
 
     [Tooltip("Log every server event as it plays, to see where a match stalls.")]
     [SerializeField] private bool logEvents = true;
