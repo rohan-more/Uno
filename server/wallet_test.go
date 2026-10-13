@@ -51,7 +51,7 @@ func (f *fakeWallet) WriteState(ctx context.Context, userID string, state wallet
 }
 
 func TestStarterCoins_GrantedOnceEver(t *testing.T) {
-	w, cfg, ctx := newFakeWallet(), DefaultMatchConfig(), context.Background()
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
 
 	for login := 0; login < 3; login++ {
 		if _, err := grantStarterCoins(ctx, w, cfg, "u"); err != nil {
@@ -65,7 +65,7 @@ func TestStarterCoins_GrantedOnceEver(t *testing.T) {
 }
 
 func TestStarterCoins_RacingLoginsGrantOnce(t *testing.T) {
-	w, cfg, ctx := newFakeWallet(), DefaultMatchConfig(), context.Background()
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
 
 	// Two logins read "not granted" at the same time; only one write can win.
 	_, versionA, _ := w.ReadState(ctx, "u")
@@ -84,15 +84,15 @@ func TestStarterCoins_RacingLoginsGrantOnce(t *testing.T) {
 }
 
 func TestFreeCoins_CooldownBetweenClaims(t *testing.T) {
-	w, cfg, ctx := newFakeWallet(), DefaultMatchConfig(), context.Background()
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
 	start := int64(1_000_000_000)
 
 	info, err := claimFreeCoins(ctx, w, cfg, "u", start)
 	if err != nil || !info.Claimed || info.Coins != int64(cfg.FreeCoins) {
 		t.Fatalf("first claim: %+v, %v", info, err)
 	}
-	if info.FreeCoinsInMs != int64(cfg.FreeCoinsEveryMs) {
-		t.Errorf("after claiming, next in %d ms, want %d", info.FreeCoinsInMs, cfg.FreeCoinsEveryMs)
+	if info.FreeCoinsInMs != cfg.FreeCoinsEveryMillis() {
+		t.Errorf("after claiming, next in %d ms, want %d", info.FreeCoinsInMs, cfg.FreeCoinsEveryMillis())
 	}
 
 	// A minute later: refused, coins unchanged, and it says how long to wait.
@@ -100,12 +100,12 @@ func TestFreeCoins_CooldownBetweenClaims(t *testing.T) {
 	if err != nil || info.Claimed || info.Coins != int64(cfg.FreeCoins) {
 		t.Fatalf("early claim should be refused: %+v, %v", info, err)
 	}
-	if want := int64(cfg.FreeCoinsEveryMs) - 60_000; info.FreeCoinsInMs != want {
+	if want := cfg.FreeCoinsEveryMillis() - 60_000; info.FreeCoinsInMs != want {
 		t.Errorf("early claim: next in %d ms, want %d", info.FreeCoinsInMs, want)
 	}
 
 	// Once the cooldown is over it works again.
-	info, err = claimFreeCoins(ctx, w, cfg, "u", start+int64(cfg.FreeCoinsEveryMs))
+	info, err = claimFreeCoins(ctx, w, cfg, "u", start+cfg.FreeCoinsEveryMillis())
 	if err != nil || !info.Claimed || info.Coins != 2*int64(cfg.FreeCoins) {
 		t.Fatalf("claim after the cooldown: %+v, %v", info, err)
 	}
@@ -143,7 +143,7 @@ func TestDebugGrant_AmountIsBounded(t *testing.T) {
 }
 
 func TestDebugResetFreeCoins_MakesThemClaimable(t *testing.T) {
-	w, cfg, ctx := newFakeWallet(), DefaultMatchConfig(), context.Background()
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
 	now := int64(5_000_000)
 
 	if _, err := claimFreeCoins(ctx, w, cfg, "u", now); err != nil {

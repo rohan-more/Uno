@@ -65,7 +65,7 @@ type WalletInfo struct {
 // grantStarterCoins gives an account its starting coins, once ever. It runs on
 // every login, so accounts made before coins existed get them too. The flag is
 // written first, against its version, so two logins at once can't both grant.
-func grantStarterCoins(ctx context.Context, store walletStore, cfg MatchConfig, userID string) (bool, error) {
+func grantStarterCoins(ctx context.Context, store walletStore, cfg EconomyConfig, userID string) (bool, error) {
 	state, version, err := store.ReadState(ctx, userID)
 	if err != nil {
 		return false, err
@@ -88,7 +88,7 @@ func grantStarterCoins(ctx context.Context, store walletStore, cfg MatchConfig, 
 }
 
 // walletInfo reads the balance and when free coins can next be claimed.
-func walletInfo(ctx context.Context, store walletStore, cfg MatchConfig, userID string, nowMs int64) (WalletInfo, error) {
+func walletInfo(ctx context.Context, store walletStore, cfg EconomyConfig, userID string, nowMs int64) (WalletInfo, error) {
 	coins, err := store.Balance(ctx, userID)
 	if err != nil {
 		return WalletInfo{}, err
@@ -104,11 +104,11 @@ func walletInfo(ctx context.Context, store walletStore, cfg MatchConfig, userID 
 	}, nil
 }
 
-func freeCoinsInMs(state walletState, cfg MatchConfig, nowMs int64) int64 {
+func freeCoinsInMs(state walletState, cfg EconomyConfig, nowMs int64) int64 {
 	if state.LastFreeClaimMs == 0 {
 		return 0
 	}
-	left := state.LastFreeClaimMs + int64(cfg.FreeCoinsEveryMs) - nowMs
+	left := state.LastFreeClaimMs + cfg.FreeCoinsEveryMillis() - nowMs
 	if left < 0 {
 		return 0
 	}
@@ -117,7 +117,7 @@ func freeCoinsInMs(state walletState, cfg MatchConfig, nowMs int64) int64 {
 
 // claimFreeCoins grants the free coins if the cooldown has passed. Not being
 // ready isn't an error: Claimed is false and FreeCoinsInMs says how long.
-func claimFreeCoins(ctx context.Context, store walletStore, cfg MatchConfig, userID string, nowMs int64) (WalletInfo, error) {
+func claimFreeCoins(ctx context.Context, store walletStore, cfg EconomyConfig, userID string, nowMs int64) (WalletInfo, error) {
 	state, version, err := store.ReadState(ctx, userID)
 	if err != nil {
 		return WalletInfo{}, err
@@ -271,7 +271,7 @@ func rpcGetWallet(ctx context.Context, logger runtime.Logger, db *sql.DB, nk run
 	if err != nil {
 		return "", err
 	}
-	cfg := LoadMatchConfig(ctx, logger, nk)
+	cfg := LoadEconomyConfig(ctx, logger, nk)
 	info, err := walletInfo(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("get wallet")
@@ -285,7 +285,7 @@ func rpcClaimFreeCoins(ctx context.Context, logger runtime.Logger, db *sql.DB, n
 	if err != nil {
 		return "", err
 	}
-	cfg := LoadMatchConfig(ctx, logger, nk)
+	cfg := LoadEconomyConfig(ctx, logger, nk)
 	info, err := claimFreeCoins(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
 	if err != nil {
 		logger.WithField("error", err.Error()).Error("claim free coins")
@@ -332,7 +332,7 @@ func rpcDebugResetFreeCoins(ctx context.Context, logger runtime.Logger, db *sql.
 }
 
 func walletReply(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID string) (string, error) {
-	cfg := LoadMatchConfig(ctx, logger, nk)
+	cfg := LoadEconomyConfig(ctx, logger, nk)
 	info, err := walletInfo(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
 	if err != nil {
 		return "", runtime.NewError("could not read the wallet", 13)

@@ -91,7 +91,7 @@ func afterAuthenticateDevice(ctx context.Context, logger runtime.Logger, db *sql
 	}
 
 	// Every login checks, so accounts made before coins existed get them too.
-	cfg := LoadMatchConfig(ctx, logger, nk)
+	cfg := LoadEconomyConfig(ctx, logger, nk)
 	if granted, err := grantStarterCoins(ctx, nakamaWallet{nk}, cfg, userID); err != nil {
 		logger.WithField("error", err.Error()).Error("after authenticate: starting coins")
 	} else if granted {

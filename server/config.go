@@ -3,44 +3,65 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math"
 
 	"github.com/heroiclabs/nakama-common/runtime"
 )
 
-// Tunables live in a storage object so they can be edited in the Nakama console
-// without a rebuild. They are read when a match is created, so changes affect
-// new matches only and never a game in progress.
+// Tunables live in storage objects so they can be edited in the Nakama console
+// without a rebuild, one object per area so each stays short:
+//
+//   - config/match:   lobby and turn timings, read when a match is created, so
+//     changes affect new matches only and never a game in progress.
+//   - config/economy: coins, read on every wallet request, so changes apply at
+//     once.
+//
+// Stored values use units that read well (seconds with decimals, minutes) and
+// say so in their names. The code works in milliseconds, converted on load.
 const (
 	configCollection = "config"
 	configKey        = "match"
+	economyKey       = "economy"
 )
 
-// MatchConfig holds every timing knob for a match. Anything missing or
-// nonsensical in storage falls back to the default below.
+// ---------- match ----------
+
+// MatchConfig holds every timing knob for a match, in milliseconds. Anything
+// missing or nonsensical in storage falls back to the default below.
 type MatchConfig struct {
 	// Lobby
-	LobbyCountdownMs int   `json:"lobbyCountdownMs"` // from the first player joining
-	BotJoinAtMsLeft  []int `json:"botJoinAtMsLeft"`  // bots fill empty seats at these marks
-	JoinCutoffMs     int   `json:"joinCutoffMs"`     // no new players once this little time is left
-	PreMatchMs       int   `json:"preMatchMs"`       // dealt table shown before the first turn
+	LobbyCountdownMs int   // from the first player joining
+	BotJoinAtMsLeft  []int // bots fill empty seats at these marks
+	JoinCutoffMs     int   // no new players once this little time is left
+	PreMatchMs       int   // dealt table shown before the first turn
 
 	// Turns
-	TurnMs     int `json:"turnMs"`     // per turn, before the server plays it safe
-	BotThinkMs int `json:"botThinkMs"` // pause before a bot acts, so moves are watchable
-	TurnGapMs  int `json:"turnGapMs"`  // pause after any move, so play does not race
+	TurnMs     int // per turn, before the server plays it safe
+	BotThinkMs int // pause before a bot acts, so moves are watchable
+	TurnGapMs  int // pause after any move, so play does not race
 
 	// Absent players
-	MissedTurnsForBot int `json:"missedTurnsForBot"` // consecutive timeouts before a bot takes over
+	MissedTurnsForBot int // consecutive timeouts before a bot takes over
 
 	// Shutting down
-	EmptyLobbyGraceMs int `json:"emptyLobbyGraceMs"` // how long a new lobby waits for its first player
-	NoHumansCloseMs   int `json:"noHumansCloseMs"`   // close once no human has been connected this long
-	PostGameCloseMs   int `json:"postGameCloseMs"`   // results screen time after GAME_OVER
+	EmptyLobbyGraceMs int // how long a new lobby waits for its first player
+	NoHumansCloseMs   int // close once no human has been connected this long
+	PostGameCloseMs   int // results screen time after GAME_OVER
+}
 
-	// Coins
-	StartingCoins    int `json:"startingCoins"`    // given once to every account
-	FreeCoins        int `json:"freeCoins"`        // what a free-coins claim gives
-	FreeCoinsEveryMs int `json:"freeCoinsEveryMs"` // how often free coins can be claimed
+// matchConfigStored is config/match as it appears in the console.
+type matchConfigStored struct {
+	LobbyCountdownSeconds  float64   `json:"lobbyCountdownSeconds"`
+	BotJoinAtSecondsLeft   []float64 `json:"botJoinAtSecondsLeft"`
+	JoinCutoffSeconds      float64   `json:"joinCutoffSeconds"`
+	PreMatchSeconds        float64   `json:"preMatchSeconds"`
+	TurnSeconds            float64   `json:"turnSeconds"`
+	BotThinkSeconds        float64   `json:"botThinkSeconds"`
+	TurnGapSeconds         float64   `json:"turnGapSeconds"`
+	MissedTurnsForBot      int       `json:"missedTurnsForBot"`
+	EmptyLobbyGraceSeconds float64   `json:"emptyLobbyGraceSeconds"`
+	NoHumansCloseSeconds   float64   `json:"noHumansCloseSeconds"`
+	PostGameCloseSeconds   float64   `json:"postGameCloseSeconds"`
 }
 
 // DefaultMatchConfig returns the values the game ships with.
@@ -57,38 +78,64 @@ func DefaultMatchConfig() MatchConfig {
 		EmptyLobbyGraceMs: 10000,
 		NoHumansCloseMs:   10000,
 		PostGameCloseMs:   30000,
-		StartingCoins:     500,
-		FreeCoins:         100,
-		FreeCoinsEveryMs:  4 * 60 * 60 * 1000, // 4 hours
 	}
 }
 
-// LoadMatchConfig reads the storage object and fills any gap with a default.
-// It never fails: a missing or broken object just means default values, logged
-// so a typo in the console is visible.
+func seconds(ms int) float64 { return float64(ms) / 1000 }
+func millis(s float64) int   { return int(math.Round(s * 1000)) }
+
+func (c MatchConfig) stored() matchConfigStored {
+	marks := make([]float64, len(c.BotJoinAtMsLeft))
+	for i, m := range c.BotJoinAtMsLeft {
+		marks[i] = seconds(m)
+	}
+	return matchConfigStored{
+		LobbyCountdownSeconds:  seconds(c.LobbyCountdownMs),
+		BotJoinAtSecondsLeft:   marks,
+		JoinCutoffSeconds:      seconds(c.JoinCutoffMs),
+		PreMatchSeconds:        seconds(c.PreMatchMs),
+		TurnSeconds:            seconds(c.TurnMs),
+		BotThinkSeconds:        seconds(c.BotThinkMs),
+		TurnGapSeconds:         seconds(c.TurnGapMs),
+		MissedTurnsForBot:      c.MissedTurnsForBot,
+		EmptyLobbyGraceSeconds: seconds(c.EmptyLobbyGraceMs),
+		NoHumansCloseSeconds:   seconds(c.NoHumansCloseMs),
+		PostGameCloseSeconds:   seconds(c.PostGameCloseMs),
+	}
+}
+
+func (s matchConfigStored) config() MatchConfig {
+	marks := make([]int, len(s.BotJoinAtSecondsLeft))
+	for i, m := range s.BotJoinAtSecondsLeft {
+		marks[i] = millis(m)
+	}
+	return MatchConfig{
+		LobbyCountdownMs:  millis(s.LobbyCountdownSeconds),
+		BotJoinAtMsLeft:   marks,
+		JoinCutoffMs:      millis(s.JoinCutoffSeconds),
+		PreMatchMs:        millis(s.PreMatchSeconds),
+		TurnMs:            millis(s.TurnSeconds),
+		BotThinkMs:        millis(s.BotThinkSeconds),
+		TurnGapMs:         millis(s.TurnGapSeconds),
+		MissedTurnsForBot: s.MissedTurnsForBot,
+		EmptyLobbyGraceMs: millis(s.EmptyLobbyGraceSeconds),
+		NoHumansCloseMs:   millis(s.NoHumansCloseSeconds),
+		PostGameCloseMs:   millis(s.PostGameCloseSeconds),
+	}
+}
+
+// LoadMatchConfig reads config/match and fills any gap with a default. It never
+// fails: a missing or broken object just means default values, logged so a
+// typo in the console is visible.
 func LoadMatchConfig(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule) MatchConfig {
-	cfg := DefaultMatchConfig()
+	def := DefaultMatchConfig()
 
-	objects, err := nk.StorageRead(ctx, []*runtime.StorageRead{{
-		Collection: configCollection,
-		Key:        configKey,
-	}})
-	if err != nil {
-		logger.WithField("error", err.Error()).Warn("config read failed, using defaults")
-		return cfg
+	// Decode over the defaults, so a partial object keeps the other values.
+	stored := def.stored()
+	if !readConfigObject(ctx, logger, nk, configKey, &stored) {
+		return def
 	}
-	if len(objects) == 0 {
-		return cfg // nothing stored yet
-	}
-
-	// Decode over a copy so a partial object keeps the other defaults.
-	stored := cfg
-	if err := json.Unmarshal([]byte(objects[0].Value), &stored); err != nil {
-		logger.WithField("error", err.Error()).Warn("config is not valid JSON, using defaults")
-		return cfg
-	}
-
-	return sanitize(stored, cfg, logger)
+	return sanitize(stored.config(), def, logger)
 }
 
 // sanitize replaces impossible values with the default and says which ones.
@@ -101,19 +148,16 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 		return fallback
 	}
 
-	c.LobbyCountdownMs = fix("lobbyCountdownMs", c.LobbyCountdownMs, def.LobbyCountdownMs, false)
-	c.JoinCutoffMs = fix("joinCutoffMs", c.JoinCutoffMs, def.JoinCutoffMs, true)
-	c.PreMatchMs = fix("preMatchMs", c.PreMatchMs, def.PreMatchMs, true)
-	c.TurnMs = fix("turnMs", c.TurnMs, def.TurnMs, false)
-	c.BotThinkMs = fix("botThinkMs", c.BotThinkMs, def.BotThinkMs, true)
-	c.TurnGapMs = fix("turnGapMs", c.TurnGapMs, def.TurnGapMs, true)
+	c.LobbyCountdownMs = fix("lobbyCountdownSeconds", c.LobbyCountdownMs, def.LobbyCountdownMs, false)
+	c.JoinCutoffMs = fix("joinCutoffSeconds", c.JoinCutoffMs, def.JoinCutoffMs, true)
+	c.PreMatchMs = fix("preMatchSeconds", c.PreMatchMs, def.PreMatchMs, true)
+	c.TurnMs = fix("turnSeconds", c.TurnMs, def.TurnMs, false)
+	c.BotThinkMs = fix("botThinkSeconds", c.BotThinkMs, def.BotThinkMs, true)
+	c.TurnGapMs = fix("turnGapSeconds", c.TurnGapMs, def.TurnGapMs, true)
 	c.MissedTurnsForBot = fix("missedTurnsForBot", c.MissedTurnsForBot, def.MissedTurnsForBot, false)
-	c.EmptyLobbyGraceMs = fix("emptyLobbyGraceMs", c.EmptyLobbyGraceMs, def.EmptyLobbyGraceMs, false)
-	c.NoHumansCloseMs = fix("noHumansCloseMs", c.NoHumansCloseMs, def.NoHumansCloseMs, false)
-	c.PostGameCloseMs = fix("postGameCloseMs", c.PostGameCloseMs, def.PostGameCloseMs, false)
-	c.StartingCoins = fix("startingCoins", c.StartingCoins, def.StartingCoins, true)
-	c.FreeCoins = fix("freeCoins", c.FreeCoins, def.FreeCoins, false)
-	c.FreeCoinsEveryMs = fix("freeCoinsEveryMs", c.FreeCoinsEveryMs, def.FreeCoinsEveryMs, false)
+	c.EmptyLobbyGraceMs = fix("emptyLobbyGraceSeconds", c.EmptyLobbyGraceMs, def.EmptyLobbyGraceMs, false)
+	c.NoHumansCloseMs = fix("noHumansCloseSeconds", c.NoHumansCloseMs, def.NoHumansCloseMs, false)
+	c.PostGameCloseMs = fix("postGameCloseSeconds", c.PostGameCloseMs, def.PostGameCloseMs, false)
 
 	// Bot marks must be inside the countdown, and later marks come first.
 	marks := make([]int, 0, len(c.BotJoinAtMsLeft))
@@ -136,26 +180,104 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 
 	// A cutoff at or beyond the whole countdown would let nobody in.
 	if c.JoinCutoffMs >= c.LobbyCountdownMs {
-		logger.Warn("joinCutoffMs >= lobbyCountdownMs, using default")
+		logger.Warn("joinCutoffSeconds >= lobbyCountdownSeconds, using default")
 		c.JoinCutoffMs = def.JoinCutoffMs
 	}
 	return c
 }
 
-// WriteDefaultConfig stores the shipped values, so the object exists in the
-// console ready to edit. Also how you undo a bad edit.
+// ---------- economy ----------
+
+// EconomyConfig holds the coin settings. Stake and payouts join in phase 3.
+type EconomyConfig struct {
+	StartingCoins         int `json:"startingCoins"`         // given once to every account
+	FreeCoins             int `json:"freeCoins"`             // what a free-coins claim gives
+	FreeCoinsEveryMinutes int `json:"freeCoinsEveryMinutes"` // how often free coins can be claimed
+}
+
+// DefaultEconomyConfig returns the coin settings the game ships with.
+func DefaultEconomyConfig() EconomyConfig {
+	return EconomyConfig{
+		StartingCoins:         500,
+		FreeCoins:             100,
+		FreeCoinsEveryMinutes: 240, // 4 hours
+	}
+}
+
+// FreeCoinsEveryMillis is the free-coins cooldown in milliseconds, the unit the
+// wallet works in.
+func (c EconomyConfig) FreeCoinsEveryMillis() int64 {
+	return int64(c.FreeCoinsEveryMinutes) * 60_000
+}
+
+// LoadEconomyConfig reads config/economy, with defaults for anything missing
+// or impossible.
+func LoadEconomyConfig(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule) EconomyConfig {
+	def := DefaultEconomyConfig()
+	c := def
+	if !readConfigObject(ctx, logger, nk, economyKey, &c) {
+		return def
+	}
+
+	if c.StartingCoins < 0 {
+		logger.WithField("value", c.StartingCoins).Warn("bad startingCoins, using default")
+		c.StartingCoins = def.StartingCoins
+	}
+	if c.FreeCoins <= 0 {
+		logger.WithField("value", c.FreeCoins).Warn("bad freeCoins, using default")
+		c.FreeCoins = def.FreeCoins
+	}
+	if c.FreeCoinsEveryMinutes <= 0 {
+		logger.WithField("value", c.FreeCoinsEveryMinutes).Warn("bad freeCoinsEveryMinutes, using default")
+		c.FreeCoinsEveryMinutes = def.FreeCoinsEveryMinutes
+	}
+	return c
+}
+
+// ---------- storage ----------
+
+// readConfigObject decodes config/<key> over whatever into already holds.
+// False when there's nothing usable stored, so the caller keeps its defaults.
+func readConfigObject(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, key string, into interface{}) bool {
+	objects, err := nk.StorageRead(ctx, []*runtime.StorageRead{{
+		Collection: configCollection,
+		Key:        key,
+	}})
+	if err != nil {
+		logger.WithField("key", key).WithField("error", err.Error()).Warn("config read failed, using defaults")
+		return false
+	}
+	if len(objects) == 0 {
+		return false // nothing stored yet
+	}
+	if err := json.Unmarshal([]byte(objects[0].Value), into); err != nil {
+		logger.WithField("key", key).WithField("error", err.Error()).Warn("config is not valid JSON, using defaults")
+		return false
+	}
+	return true
+}
+
+// WriteDefaultConfig stores the shipped values for every area, so the objects
+// exist in the console ready to edit. Also how you undo a bad edit.
 func WriteDefaultConfig(ctx context.Context, nk runtime.NakamaModule) error {
-	value, err := json.Marshal(DefaultMatchConfig())
+	match, err := json.Marshal(DefaultMatchConfig().stored())
+	if err != nil {
+		return err
+	}
+	economy, err := json.Marshal(DefaultEconomyConfig())
 	if err != nil {
 		return err
 	}
 
-	_, err = nk.StorageWrite(ctx, []*runtime.StorageWrite{{
-		Collection:      configCollection,
-		Key:             configKey,
-		Value:           string(value),
-		PermissionRead:  2, // public: handy to inspect from a client while developing
-		PermissionWrite: 0, // server only
-	}})
+	write := func(key string, value []byte) *runtime.StorageWrite {
+		return &runtime.StorageWrite{
+			Collection:      configCollection,
+			Key:             key,
+			Value:           string(value),
+			PermissionRead:  2, // public: handy to inspect from a client while developing
+			PermissionWrite: 0, // server only
+		}
+	}
+	_, err = nk.StorageWrite(ctx, []*runtime.StorageWrite{write(configKey, match), write(economyKey, economy)})
 	return err
 }

@@ -259,38 +259,50 @@ Nothing else follows. The client should say why and go back to the home screen.
 
 ## 8. Configuration
 
-Tunables live in a Nakama **storage object** so they can be edited in the
-developer console at `localhost:7351` with no rebuild:
+Tunables live in Nakama **storage objects**, one per area, so they can be edited
+in the developer console with no rebuild (`localhost:7351` by default; this
+repo's Docker setup maps it to `localhost:7451`).
 
-```
-collection: config
-key:        match
-```
+Values use units that read well and say so in their names: seconds (decimals
+allowed, e.g. `1.2`) and minutes. The server converts them on load.
+
+**`config` / `match`**: lobby and turn timings. Read when a match is
+**created**, so edits apply to new matches, never to one in progress.
 
 ```json
 {
-  "lobbyCountdownMs": 12000,
-  "botJoinAtMsLeft": [8000, 5000, 3000],
-  "preMatchMs": 3000,
-  "turnMs": 8000,
-  "turnGapMs": 500,
+  "lobbyCountdownSeconds": 12,
+  "botJoinAtSecondsLeft": [8, 5, 3],
+  "joinCutoffSeconds": 1,
+  "preMatchSeconds": 3,
+  "turnSeconds": 8,
+  "botThinkSeconds": 1.2,
+  "turnGapSeconds": 0.5,
   "missedTurnsForBot": 3,
-  "botThinkMs": 1200,
-  "emptyLobbyGraceMs": 10000,
-  "noHumansCloseMs": 10000,
-  "postGameCloseMs": 30000,
+  "emptyLobbyGraceSeconds": 10,
+  "noHumansCloseSeconds": 10,
+  "postGameCloseSeconds": 30
+}
+```
+
+**`config` / `economy`**: coins. Read on every wallet request, so edits apply
+at once.
+
+```json
+{
   "startingCoins": 500,
   "freeCoins": 100,
-  "freeCoinsEveryMs": 14400000
+  "freeCoinsEveryMinutes": 240
 }
 ```
 
 - Defaults live in Go, so an empty database works.
-- Read when a match is **created**: edits apply to new matches, never to one in
-  progress.
-- Missing or invalid values fall back to the default and are logged.
-- An RPC restores the defaults.
+- Missing fields keep their default; invalid values fall back to the default and
+  are logged.
+- The `reset_config` RPC writes both objects with every default filled in.
 - Rules constants (7-card hands, 4 seats, 108 cards) stay in code.
+- Message fields such as `turnMs` in `TURN_CHANGED` are protocol, not config,
+  and stay in milliseconds.
 
 ## 9. Staying in sync
 
@@ -327,7 +339,7 @@ changes it, and every change is in the wallet ledger with a `reason`:
 
 - **Starting coins:** every account gets `startingCoins` once, at login. Accounts
   made before coins existed get them at their next login.
-- **Free coins:** `freeCoins` every `freeCoinsEveryMs`, for anyone.
+- **Free coins:** `freeCoins` every `freeCoinsEveryMinutes`, for anyone.
 
 All wallet RPCs reply with the same shape:
 
