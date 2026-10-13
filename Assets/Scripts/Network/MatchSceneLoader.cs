@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -12,6 +13,11 @@ public class MatchSceneLoader : MonoBehaviour
 {
     [SerializeField] private string matchSceneName = "MatchScene";
     [SerializeField] private string homeSceneName = "Boot";
+
+    [Tooltip("Open the table this long before the first turn, so it appears just as play starts.")]
+    [SerializeField] private float sceneLoadAllowance = 0.5f;
+
+    private bool loading;
 
     private NakamaConnection Connection => NakamaConnection.Instance;
 
@@ -32,10 +38,25 @@ public class MatchSceneLoader : MonoBehaviour
         if (opCode != UnoOpCodes.GameState)
             return;
 
-        if (SceneManager.GetActiveScene().name == matchSceneName)
-            return; // already there; this is just a resync
+        if (SceneManager.GetActiveScene().name == matchSceneName || loading)
+            return; // already there or on the way; this is just a resync
+
+        // The server pauses before the first turn so everyone sees the full
+        // table of players: spend that pause on the matchmaking screen, not at
+        // the table. Rejoining mid-match has no pause and goes straight in.
+        var state = JsonUtility.FromJson<GameStateMsg>(json);
+        float wait = state != null ? state.startsInMs / 1000f - sceneLoadAllowance : 0f;
+        StartCoroutine(LoadMatchScene(Mathf.Max(0f, wait)));
+    }
+
+    private IEnumerator LoadMatchScene(float wait)
+    {
+        loading = true;
+        if (wait > 0f)
+            yield return new WaitForSeconds(wait);
 
         SceneManager.LoadScene(matchSceneName);
+        loading = false;
     }
 
     /// <summary>Back to the home screen, e.g. after the results screen.</summary>
