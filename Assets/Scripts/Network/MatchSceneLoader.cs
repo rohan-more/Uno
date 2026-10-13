@@ -21,13 +21,17 @@ public class MatchSceneLoader : MonoBehaviour
 
     private NakamaConnection Connection => NakamaConnection.Instance;
 
-    private void OnEnable()
+    // Start, not OnEnable: by then every Awake has run, so NakamaConnection exists
+    private void Start()
     {
         if (Connection != null)
             Connection.OnMatchState += HandleMatchState;
+        else
+            Debug.LogError("MatchSceneLoader found no NakamaConnection: it won't hear the deal, " +
+                           "so the match scene will never open.");
     }
 
-    private void OnDisable()
+    private void OnDestroy()
     {
         if (Connection != null)
             Connection.OnMatchState -= HandleMatchState;
@@ -45,8 +49,9 @@ public class MatchSceneLoader : MonoBehaviour
         // table of players: spend that pause on the matchmaking screen, not at
         // the table. Rejoining mid-match has no pause and goes straight in.
         var state = JsonUtility.FromJson<GameStateMsg>(json);
-        float wait = state != null ? state.startsInMs / 1000f - sceneLoadAllowance : 0f;
-        StartCoroutine(LoadMatchScene(Mathf.Max(0f, wait)));
+        float wait = Mathf.Max(0f, state != null ? state.startsInMs / 1000f - sceneLoadAllowance : 0f);
+        Debug.Log($"[SCENE] Deal received; opening {matchSceneName} in {wait:0.0} s");
+        StartCoroutine(LoadMatchScene(wait));
     }
 
     private IEnumerator LoadMatchScene(float wait)
@@ -55,6 +60,7 @@ public class MatchSceneLoader : MonoBehaviour
         if (wait > 0f)
             yield return new WaitForSeconds(wait);
 
+        Debug.Log($"[SCENE] Opening {matchSceneName}");
         SceneManager.LoadScene(matchSceneName);
         loading = false;
     }

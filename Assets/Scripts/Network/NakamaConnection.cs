@@ -10,6 +10,10 @@ using UnityEngine;
 /// Lives in the Boot scene and survives scene loads. UI scripts talk to this;
 /// nothing else should create a Client.
 /// </summary>
+// Created before every other script, so anything reading Instance in its own
+// Awake or OnEnable finds it. Unity doesn't otherwise order scripts, not even
+// ones on the same object.
+[DefaultExecutionOrder(-1000)]
 public class NakamaConnection : MonoBehaviour
 {
     public static NakamaConnection Instance { get; private set; }
