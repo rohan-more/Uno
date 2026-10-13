@@ -183,8 +183,8 @@ MonoBehaviour:
 
 '
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8b9284effd02b344eb4e6e072c2a460a, type: 2}
+  m_sharedMaterial: {fileID: 1497733064905580600, guid: 8b9284effd02b344eb4e6e072c2a460a, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -208,8 +208,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 25
-  m_fontSizeBase: 25
+  m_fontSize: 35
+  m_fontSizeBase: 35
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -354,8 +354,8 @@ MonoBehaviour:
 
 '
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8b9284effd02b344eb4e6e072c2a460a, type: 2}
+  m_sharedMaterial: {fileID: 1497733064905580600, guid: 8b9284effd02b344eb4e6e072c2a460a, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -379,8 +379,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 25
-  m_fontSizeBase: 25
+  m_fontSize: 35
+  m_fontSizeBase: 35
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1019,7 +1019,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 327, y: -168}
+  m_AnchoredPosition: {x: 350, y: -48}
   m_SizeDelta: {x: 50, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &349705063
@@ -1029,7 +1029,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 349705061}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name: 
@@ -1095,7 +1095,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 304, y: -126.3}
+  m_AnchoredPosition: {x: 323.9, y: -39}
   m_SizeDelta: {x: 50, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &406063703
@@ -1105,7 +1105,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 406063701}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name: 
@@ -1312,8 +1312,8 @@ MonoBehaviour:
 
 '
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8b9284effd02b344eb4e6e072c2a460a, type: 2}
+  m_sharedMaterial: {fileID: 1497733064905580600, guid: 8b9284effd02b344eb4e6e072c2a460a, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1337,8 +1337,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 25
-  m_fontSizeBase: 25
+  m_fontSize: 35
+  m_fontSizeBase: 35
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1882,7 +1882,6 @@ GameObject:
   m_Component:
   - component: {fileID: 771139321}
   - component: {fileID: 771139320}
-  - component: {fileID: 771139319}
   - component: {fileID: 771139323}
   - component: {fileID: 771139322}
   - component: {fileID: 771139324}
@@ -1893,37 +1892,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &771139319
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 771139318}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c7f09d34886a6954aa619a451cb37cfc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  actionBus: {fileID: 771139320}
-  handView: {fileID: 1349991960}
-  opponents:
-  - hand: {fileID: 1655245926}
-    seat: 4
-  - hand: {fileID: 1962554670}
-    seat: 5
-  - hand: {fileID: 1082950998}
-    seat: 6
-  discardPileView: {fileID: 1087828381}
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
-  cardProxy: {fileID: 493928182}
-  gameConfig: {fileID: 11400000, guid: c3570bc389c8bcf41942a60b3695e9ca, type: 2}
-  ChosenCardColor: 0
-  useTestHand: 1
-  testHandSize: 7
-  testCardIds:
-  - RED_SKIP
-  - RED_DRAW_TWO
 --- !u!114 &771139320
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1965,7 +1933,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   waitForView: 1
   stepTimeout: 3
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   logEvents: 1
 --- !u!114 &771139323
 MonoBehaviour:
@@ -1980,7 +1947,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   presenter: {fileID: 771139322}
-  avatars: {fileID: 11400000, guid: 2c7f500e2d4f4bc0a499f218a3d5f5ed, type: 2}
   panels:
   - seat: 0
     avatar: {fileID: 2006950947}
@@ -2060,7 +2026,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   presenter: {fileID: 771139322}
   seatsView: {fileID: 771139323}
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   actionBus: {fileID: 771139320}
   hands:
   - {fileID: 1349991960}
@@ -2070,7 +2035,6 @@ MonoBehaviour:
   discardPile: {fileID: 1087828381}
   cardProxy: {fileID: 493928182}
   drawPile: {fileID: 948517570}
-  cardBackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
   drawDuration: 0.9
   drawnCardHover: {fileID: 1087828377}
   flipDuration: 0.25
@@ -2588,7 +2552,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 0}
+  m_Sprite: {fileID: 21300000, guid: 007a6f01c7fbf0c4993bf49f1f872a52, type: 3}
   m_Type: 0
   m_PreserveAspect: 1
   m_FillCenter: 1
@@ -2618,7 +2582,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da6273adac51aee4499e80ed4951614c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  cardBackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
   actionBus: {fileID: 771139320}
   maxLayers: 5
   cardsPerLayer: 10
@@ -2962,9 +2925,7 @@ MonoBehaviour:
   ownerPlayerId: 0
   cardPrefab: {fileID: 9053246892532798734, guid: 72d1e22b68d234948bb294e8df1e5662, type: 3}
   layout: {fileID: 1082951000}
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   actionBus: {fileID: 771139320}
-  cardBackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
   cardCountText: {fileID: 0}
 --- !u!222 &1082950999
 CanvasRenderer:
@@ -3309,7 +3270,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 197, y: -128.2}
+  m_AnchoredPosition: {x: 207, y: -39}
   m_SizeDelta: {x: 50, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1204320726
@@ -3319,7 +3280,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1204320724}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name: 
@@ -4079,9 +4040,7 @@ MonoBehaviour:
   ownerPlayerId: 0
   cardPrefab: {fileID: 9053246892532798734, guid: 72d1e22b68d234948bb294e8df1e5662, type: 3}
   layout: {fileID: 1349991957}
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   actionBus: {fileID: 771139320}
-  cardBackSprite: {fileID: 0}
   cardCountText: {fileID: 0}
 --- !u!1 &1363046206
 GameObject:
@@ -4659,9 +4618,7 @@ MonoBehaviour:
   ownerPlayerId: 0
   cardPrefab: {fileID: 9053246892532798734, guid: 72d1e22b68d234948bb294e8df1e5662, type: 3}
   layout: {fileID: 1655245928}
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   actionBus: {fileID: 771139320}
-  cardBackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
   cardCountText: {fileID: 0}
 --- !u!222 &1655245927
 CanvasRenderer:
@@ -5315,9 +5272,7 @@ MonoBehaviour:
   ownerPlayerId: 0
   cardPrefab: {fileID: 9053246892532798734, guid: 72d1e22b68d234948bb294e8df1e5662, type: 3}
   layout: {fileID: 1962554672}
-  database: {fileID: 11400000, guid: 8517b31117ba4384a94a993f024fa632, type: 2}
   actionBus: {fileID: 771139320}
-  cardBackSprite: {fileID: 21300000, guid: a291f407656db4b4891a002f2018da5d, type: 3}
   cardCountText: {fileID: 0}
 --- !u!222 &1962554671
 CanvasRenderer:

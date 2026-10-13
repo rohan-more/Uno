@@ -2311,7 +2311,7 @@ MonoBehaviour:
   serverKey: defaultkey
   multiInstanceProfiles: 1
   maxProfiles: 8
-  instantMatch: 0
+  instantMatch: 1
   debugMenu: 1
 --- !u!4 &1067828770
 Transform:
