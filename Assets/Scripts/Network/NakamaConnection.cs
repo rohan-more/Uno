@@ -141,10 +141,7 @@ public class NakamaConnection : MonoBehaviour
             AvatarIndex = ParseAvatarIndex(account.User.Metadata);
 
             Debug.Log($"Connected as {DisplayName} (avatar {AvatarIndex}, device {GetOrCreateDeviceId()}, user {_session.UserId})");
-            // Load coins before saying we're connected, so the home screen shows them at once
-            await Wallet.RefreshAsync();
-
-            OnConnected?.Invoke();
+            OnConnected?.Invoke(); // the wallet is loaded separately (see StartupLoader)
             return true;
         }
         catch (Exception e)
