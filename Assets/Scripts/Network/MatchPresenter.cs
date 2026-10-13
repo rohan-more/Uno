@@ -285,6 +285,7 @@ public class MatchPresenter : MonoBehaviour
                 break;
 
             case UnoEventTypes.TurnChanged:
+                State.HasStarted = true;
                 State.CurrentSeat = e.seat;
                 State.TurnMsLeft = e.turnMs;
                 State.PendingDraw = e.pendingDraw;

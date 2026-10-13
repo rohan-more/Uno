@@ -47,7 +47,13 @@ public class MatchState
     /// <summary>Counts up with every EVENTS message; a gap means we missed something.</summary>
     public int Seq { get; set; } = -1;
 
-    public bool IsYourTurn => CurrentSeat == YourSeat && !IsOver;
+    /// <summary>
+    /// False between the deal and the first TURN_CHANGED: the server pauses so
+    /// everyone sees the table, and rejects moves until the first turn begins.
+    /// </summary>
+    public bool HasStarted { get; set; }
+
+    public bool IsYourTurn => HasStarted && CurrentSeat == YourSeat && !IsOver;
     public bool IsOver => Ranking != null && Seats != null && Ranking.Length == Seats.Length && Seats.Length > 0;
 
     /// <summary>Replaces everything with a fresh snapshot from the server.</summary>
@@ -60,6 +66,7 @@ public class MatchState
         DeckCount = msg.deckCount;
         DrawnCardId = msg.drawnCardId;
         TurnMsLeft = msg.turnMsLeft;
+        HasStarted = msg.startsInMs <= 0;
         Ranking = msg.ranking ?? new int[0];
         Seq = msg.seq;
         ActiveColor = ParseColor(msg.activeColor);

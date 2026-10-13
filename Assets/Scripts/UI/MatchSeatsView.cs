@@ -101,7 +101,8 @@ public class MatchSeatsView : MonoBehaviour
         if (state?.Seats == null || state.Seats.Length == 0)
             return;
 
-        var active = state.IsOver ? null : PanelFor(state, state.CurrentSeat);
+        // No ring before the first turn: nobody is on the clock yet
+        var active = state.IsOver || !state.HasStarted ? null : PanelFor(state, state.CurrentSeat);
         var seat = state.SeatAt(state.CurrentSeat);
         if (seat != null && seat.HasFinished)
             active = null;
