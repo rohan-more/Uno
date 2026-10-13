@@ -36,6 +36,11 @@ type MatchConfig struct {
 	EmptyLobbyGraceMs int `json:"emptyLobbyGraceMs"` // how long a new lobby waits for its first player
 	NoHumansCloseMs   int `json:"noHumansCloseMs"`   // close once no human has been connected this long
 	PostGameCloseMs   int `json:"postGameCloseMs"`   // results screen time after GAME_OVER
+
+	// Coins
+	StartingCoins    int `json:"startingCoins"`    // given once to every account
+	FreeCoins        int `json:"freeCoins"`        // what a free-coins claim gives
+	FreeCoinsEveryMs int `json:"freeCoinsEveryMs"` // how often free coins can be claimed
 }
 
 // DefaultMatchConfig returns the values the game ships with.
@@ -52,6 +57,9 @@ func DefaultMatchConfig() MatchConfig {
 		EmptyLobbyGraceMs: 10000,
 		NoHumansCloseMs:   10000,
 		PostGameCloseMs:   30000,
+		StartingCoins:     500,
+		FreeCoins:         100,
+		FreeCoinsEveryMs:  4 * 60 * 60 * 1000, // 4 hours
 	}
 }
 
@@ -103,6 +111,9 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 	c.EmptyLobbyGraceMs = fix("emptyLobbyGraceMs", c.EmptyLobbyGraceMs, def.EmptyLobbyGraceMs, false)
 	c.NoHumansCloseMs = fix("noHumansCloseMs", c.NoHumansCloseMs, def.NoHumansCloseMs, false)
 	c.PostGameCloseMs = fix("postGameCloseMs", c.PostGameCloseMs, def.PostGameCloseMs, false)
+	c.StartingCoins = fix("startingCoins", c.StartingCoins, def.StartingCoins, true)
+	c.FreeCoins = fix("freeCoins", c.FreeCoins, def.FreeCoins, false)
+	c.FreeCoinsEveryMs = fix("freeCoinsEveryMs", c.FreeCoinsEveryMs, def.FreeCoinsEveryMs, false)
 
 	// Bot marks must be inside the countdown, and later marks come first.
 	marks := make([]int, 0, len(c.BotJoinAtMsLeft))

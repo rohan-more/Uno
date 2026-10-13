@@ -61,6 +61,19 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 	if err := initializer.RegisterRpc("reset_config", rpcResetConfig); err != nil {
 		return err
 	}
+	for id, fn := range map[string]func(context.Context, runtime.Logger, *sql.DB, runtime.NakamaModule, string) (string, error){
+		"get_wallet":             rpcGetWallet,
+		"claim_free_coins":       rpcClaimFreeCoins,
+		"debug_grant_coins":      rpcDebugGrantCoins,
+		"debug_reset_free_coins": rpcDebugResetFreeCoins,
+	} {
+		if err := initializer.RegisterRpc(id, fn); err != nil {
+			return err
+		}
+	}
+	if debugToolsOn(ctx) {
+		logger.Warn("debug tools are ON: debug RPCs accept calls")
+	}
 
 	logger.Info("Uno module loaded")
 	return nil
@@ -75,6 +88,14 @@ func afterAuthenticateDevice(ctx context.Context, logger runtime.Logger, db *sql
 	if !ok || userID == "" {
 		logger.Error("after authenticate: no user id in context")
 		return nil // never block a login over a name
+	}
+
+	// Every login checks, so accounts made before coins existed get them too.
+	cfg := LoadMatchConfig(ctx, logger, nk)
+	if granted, err := grantStarterCoins(ctx, nakamaWallet{nk}, cfg, userID); err != nil {
+		logger.WithField("error", err.Error()).Error("after authenticate: starting coins")
+	} else if granted {
+		logger.WithField("user_id", userID).WithField("coins", cfg.StartingCoins).Info("granted starting coins")
 	}
 
 	account, err := nk.AccountGetId(ctx, userID)

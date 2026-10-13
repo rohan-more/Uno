@@ -13,3 +13,9 @@ socket:
 console:
   username: admin
   password: password
+
+# Local development only: lets the F1 debug menu grant coins. Never set in a
+# real deployment.
+runtime:
+  env:
+    - "UNO_DEBUG_TOOLS=true"

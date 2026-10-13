@@ -278,7 +278,10 @@ key:        match
   "botThinkMs": 1200,
   "emptyLobbyGraceMs": 10000,
   "noHumansCloseMs": 10000,
-  "postGameCloseMs": 30000
+  "postGameCloseMs": 30000,
+  "startingCoins": 500,
+  "freeCoins": 100,
+  "freeCoinsEveryMs": 14400000
 }
 ```
 
@@ -316,7 +319,36 @@ key:        match
 - The match stays open for `postGameCloseMs` (30 s) for the results screen, then
   the server closes it. No rematch in v1.
 
-## 11. Not in v1
+## 11. Coins
+
+Coins live in each account's Nakama wallet (currency `coins`). Only the server
+changes it, and every change is in the wallet ledger with a `reason`:
+`starting`, `free`, `debug` (later `stake`, `payout`, `refund`).
+
+- **Starting coins:** every account gets `startingCoins` once, at login. Accounts
+  made before coins existed get them at their next login.
+- **Free coins:** `freeCoins` every `freeCoinsEveryMs`, for anyone.
+
+All wallet RPCs reply with the same shape:
+
+```json
+{ "coins": 600, "freeCoins": 100, "freeCoinsInMs": 0, "claimed": true }
+```
+
+`freeCoinsInMs` is how long until free coins can be claimed (0 = now), so the
+client never compares clocks with the server.
+
+| RPC | Body | Does |
+|---|---|---|
+| `get_wallet` | `{}` | Balance and free-coins wait |
+| `claim_free_coins` | `{}` | Grants free coins if ready; `claimed` says whether it did |
+| `debug_grant_coins` | `{ "amount": 500 }` | Adds 1-100000 coins. **Debug only** |
+| `debug_reset_free_coins` | `{}` | Makes free coins claimable now. **Debug only** |
+
+Debug RPCs answer `PERMISSION_DENIED` unless the server runs with
+`UNO_DEBUG_TOOLS=true` in its runtime env, which only `local.yml` sets.
+
+## 12. Not in v1
 
 Private rooms and room codes, matchmaking by skill, rematch, spectating,
 reconnecting after a bot takeover, chat and emotes, stats and leaderboards.
