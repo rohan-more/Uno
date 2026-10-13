@@ -70,6 +70,9 @@ public class NakamaConnection : MonoBehaviour
     /// </summary>
     public event Action<long, string> OnMatchState;
 
+    /// <summary>This player's coins, as the server reports them.</summary>
+    public Wallet Wallet { get; private set; }
+
     /// <summary>The match this client is in, or null.</summary>
     public string CurrentMatchId { get; private set; }
 
@@ -110,6 +113,7 @@ public class NakamaConnection : MonoBehaviour
 
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        Wallet = new Wallet(this);
 
         _multiInstanceProfiles = multiInstanceProfiles;
         _maxProfiles = Mathf.Max(1, maxProfiles);
@@ -137,6 +141,9 @@ public class NakamaConnection : MonoBehaviour
             AvatarIndex = ParseAvatarIndex(account.User.Metadata);
 
             Debug.Log($"Connected as {DisplayName} (avatar {AvatarIndex}, device {GetOrCreateDeviceId()}, user {_session.UserId})");
+            // Load coins before saying we're connected, so the home screen shows them at once
+            await Wallet.RefreshAsync();
+
             OnConnected?.Invoke();
             return true;
         }
@@ -446,6 +453,7 @@ public class NakamaConnection : MonoBehaviour
             Debug.Log($"Reconnected after {attempt + 1} attempt(s)");
             IsReconnecting = false;
             OnReconnected?.Invoke();
+            _ = Wallet.RefreshAsync();
 
             // Back to the match we dropped out of; if it's gone (or our seat
             // went to a bot), ask the server where we stand.

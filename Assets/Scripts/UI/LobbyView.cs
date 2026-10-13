@@ -29,6 +29,15 @@ public class LobbyView : MonoBehaviour
     [SerializeField] private TMP_Text playLabel;
     [SerializeField] private string reconnectText = "REJOIN MATCH";
 
+    [Header("Coins")]
+    [SerializeField] private TMP_Text coinsText;
+    [Tooltip("Claims free coins; greyed out while they're on cooldown.")]
+    [SerializeField] private Button freeCoinsButton;
+    [Tooltip("\"FREE 100\" when claimable, otherwise how long until they are.")]
+    [SerializeField] private TMP_Text freeCoinsText;
+
+    private float nextCountdownRefresh;
+
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
 
@@ -47,6 +56,10 @@ public class LobbyView : MonoBehaviour
             Connection.OnDisconnected += OnDisconnected;
             Connection.OnReconnected += OnReconnected;
         }
+
+        if (freeCoinsButton != null)
+            freeCoinsButton.onClick.AddListener(OnFreeCoinsClicked);
+        WatchWallet();
     }
 
     private void OnDisable()
@@ -56,6 +69,11 @@ public class LobbyView : MonoBehaviour
 
         if (cancelButton != null)
             cancelButton.onClick.RemoveListener(OnCancelClicked);
+
+        if (freeCoinsButton != null)
+            freeCoinsButton.onClick.RemoveListener(OnFreeCoinsClicked);
+        if (Connection != null && Connection.Wallet != null)
+            Connection.Wallet.OnChanged -= ShowCoins;
 
         if (Connection != null)
         {
@@ -89,6 +107,7 @@ public class LobbyView : MonoBehaviour
         ShowProfile();
         SetStatus("");
         SetInteractable(true);
+        WatchWallet(); // NakamaConnection may not have existed yet in OnEnable
         await CheckMatchInProgressAsync();
     }
 
@@ -176,6 +195,61 @@ public class LobbyView : MonoBehaviour
 #else
         Application.Quit();
 #endif
+    }
+
+    // ---- coins ----
+
+    private void WatchWallet()
+    {
+        if (Connection == null || Connection.Wallet == null)
+            return;
+
+        Connection.Wallet.OnChanged -= ShowCoins; // never twice
+        Connection.Wallet.OnChanged += ShowCoins;
+        ShowCoins();
+    }
+
+    private void Update()
+    {
+        // The free-coins countdown moves on its own; redraw it now and then
+        if (Time.unscaledTime >= nextCountdownRefresh)
+        {
+            nextCountdownRefresh = Time.unscaledTime + 1f;
+            ShowCoins();
+        }
+    }
+
+    private void ShowCoins()
+    {
+        var wallet = Connection != null ? Connection.Wallet : null;
+        if (wallet == null || !wallet.Loaded)
+            return;
+
+        if (coinsText != null)
+            coinsText.text = wallet.Coins.ToString("N0");
+
+        if (freeCoinsButton != null)
+            freeCoinsButton.interactable = wallet.FreeCoinsReady;
+        if (freeCoinsText != null)
+            freeCoinsText.text = wallet.FreeCoinsReady ? $"FREE {wallet.FreeCoins}" : CountdownText(wallet.FreeCoinsIn);
+    }
+
+    /// <summary>"3h 12m", "12m 05s" or "45s".</summary>
+    private static string CountdownText(TimeSpan left)
+    {
+        if (left.TotalHours >= 1)
+            return $"{(int)left.TotalHours}h {left.Minutes:00}m";
+        if (left.TotalMinutes >= 1)
+            return $"{left.Minutes}m {left.Seconds:00}s";
+        return $"{Mathf.CeilToInt((float)left.TotalSeconds)}s";
+    }
+
+    private async void OnFreeCoinsClicked()
+    {
+        if (freeCoinsButton != null)
+            freeCoinsButton.interactable = false; // no double taps while it's asked
+        await Connection.Wallet.ClaimFreeCoinsAsync();
+        ShowCoins();
     }
 
     private void OnDisconnected(string reason)

@@ -8,7 +8,8 @@ using UnityEngine.UI;
 /// NakamaConnection's Debug Menu toggle is on.
 ///
 /// Anything that changes the player's account (coins, items) must go through a
-/// server debug RPC, which the server refuses unless its debugTools setting is on.
+/// server debug RPC, which the server refuses unless it runs with
+/// UNO_DEBUG_TOOLS=true (set in server/local.yml).
 /// </summary>
 public class DebugMenu : MonoBehaviour
 {
@@ -27,6 +28,16 @@ public class DebugMenu : MonoBehaviour
     [SerializeField] private Button dropConnectionButton;
     [Tooltip("As if the game crashed: the seat is held, and home should offer REJOIN MATCH.")]
     [SerializeField] private Button goHomeKeepSeatButton;
+
+    [Header("Coins")]
+    [SerializeField] private TMP_Text coinsText;
+    [Tooltip("\"Free coins: ready\" or how long until they are.")]
+    [SerializeField] private TMP_Text freeCoinsText;
+    [Tooltip("How many coins Grant adds. Whole numbers, 1-100000.")]
+    [SerializeField] private TMP_InputField grantAmountInput;
+    [SerializeField] private Button grantCoinsButton;
+    [Tooltip("Makes free coins claimable right now.")]
+    [SerializeField] private Button resetFreeCoinsButton;
 
     [Header("Optional")]
     [SerializeField] private Button closeButton;
@@ -59,6 +70,10 @@ public class DebugMenu : MonoBehaviour
             goHomeKeepSeatButton.onClick.AddListener(GoHomeKeepingSeat);
         if (closeButton != null)
             closeButton.onClick.AddListener(Close);
+        if (grantCoinsButton != null)
+            grantCoinsButton.onClick.AddListener(GrantCoins);
+        if (resetFreeCoinsButton != null)
+            resetFreeCoinsButton.onClick.AddListener(ResetFreeCoins);
     }
 
     private void OnDisable()
@@ -69,6 +84,10 @@ public class DebugMenu : MonoBehaviour
             goHomeKeepSeatButton.onClick.RemoveListener(GoHomeKeepingSeat);
         if (closeButton != null)
             closeButton.onClick.RemoveListener(Close);
+        if (grantCoinsButton != null)
+            grantCoinsButton.onClick.RemoveListener(GrantCoins);
+        if (resetFreeCoinsButton != null)
+            resetFreeCoinsButton.onClick.RemoveListener(ResetFreeCoins);
     }
 
     private void Update()
@@ -100,6 +119,20 @@ public class DebugMenu : MonoBehaviour
             dropConnectionButton.interactable = Connection.IsConnected;
         if (goHomeKeepSeatButton != null)
             goHomeKeepSeatButton.interactable = Connection.IsConnected && inMatch;
+
+        var wallet = Connection.Wallet;
+        if (wallet != null && wallet.Loaded)
+        {
+            SetText(coinsText, $"Coins: {wallet.Coins:N0}");
+            SetText(freeCoinsText, wallet.FreeCoinsReady
+                ? "Free coins: ready"
+                : $"Free coins in {(int)wallet.FreeCoinsIn.TotalHours}h {wallet.FreeCoinsIn.Minutes:00}m {wallet.FreeCoinsIn.Seconds:00}s");
+        }
+
+        if (grantCoinsButton != null)
+            grantCoinsButton.interactable = Connection.IsConnected;
+        if (resetFreeCoinsButton != null)
+            resetFreeCoinsButton.interactable = Connection.IsConnected;
     }
 
     private void DropConnection()
@@ -119,6 +152,28 @@ public class DebugMenu : MonoBehaviour
         var loader = FindObjectOfType<MatchSceneLoader>();
         if (loader != null)
             loader.ReturnHome();
+    }
+
+    private async void GrantCoins()
+    {
+        var text = grantAmountInput != null ? grantAmountInput.text : "";
+        if (!int.TryParse(text, out var amount) || amount < 1 || amount > 100000)
+        {
+            SetText(statusText, "Enter a whole number from 1 to 100000");
+            return;
+        }
+
+        SetText(statusText, $"Granting {amount:N0} coins\u2026");
+        bool ok = await Connection.Wallet.DebugGrantAsync(amount);
+        SetText(statusText, ok ? $"Granted {amount:N0} coins"
+            : "Grant refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
+    }
+
+    private async void ResetFreeCoins()
+    {
+        bool ok = await Connection.Wallet.DebugResetFreeCoinsAsync();
+        SetText(statusText, ok ? "Free coins are claimable now"
+            : "Reset refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
     }
 
     private void Close() => panel.SetActive(false);
