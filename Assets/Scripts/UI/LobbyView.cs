@@ -6,14 +6,14 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Home screen: shows who you are and starts matchmaking.
-/// Talks only to NakamaConnection; it never touches the Nakama client directly.
+/// Talks only to Services.Connection; it never touches the Nakama client directly.
 /// </summary>
 public class LobbyView : MonoBehaviour
 {
     [Header("Profile")]
     [SerializeField] private TMP_Text nameText;
     [SerializeField] private Image avatarImage;
-    private static AvatarLibrary avatars => GameAssets.Avatars;
+    private static AvatarLibrary avatars => Services.Assets.Avatars;
 
     [Header("Buttons")]
     [SerializeField] private Button playButton;
@@ -41,7 +41,7 @@ public class LobbyView : MonoBehaviour
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     private void OnEnable()
     {
@@ -72,8 +72,8 @@ public class LobbyView : MonoBehaviour
 
         if (freeCoinsButton != null)
             freeCoinsButton.onClick.RemoveListener(OnFreeCoinsClicked);
-        if (Connection != null && Connection.Wallet != null)
-            Connection.Wallet.OnChanged -= ShowCoins;
+        if (Services.Wallet != null)
+            Services.Wallet.OnChanged -= ShowCoins;
 
         if (Connection != null)
         {
@@ -95,7 +95,7 @@ public class LobbyView : MonoBehaviour
 
         // Load the card and avatar art while connecting. Boot may already have
         // connected; only connect if it hasn't.
-        var assets = GameAssets.PreloadAsync();
+        var assets = Services.Assets.PreloadAsync();
         var connected = Connection.IsConnected || await Connection.ConnectAsync();
         await assets;
         if (!connected)
@@ -107,7 +107,7 @@ public class LobbyView : MonoBehaviour
         ShowProfile();
         SetStatus("");
         SetInteractable(true);
-        WatchWallet(); // NakamaConnection may not have existed yet in OnEnable
+        WatchWallet(); // the wallet may not have existed yet in OnEnable
         await CheckMatchInProgressAsync();
     }
 
@@ -201,11 +201,11 @@ public class LobbyView : MonoBehaviour
 
     private void WatchWallet()
     {
-        if (Connection == null || Connection.Wallet == null)
+        if (Services.Wallet == null)
             return;
 
-        Connection.Wallet.OnChanged -= ShowCoins; // never twice
-        Connection.Wallet.OnChanged += ShowCoins;
+        Services.Wallet.OnChanged -= ShowCoins; // never twice
+        Services.Wallet.OnChanged += ShowCoins;
         ShowCoins();
     }
 
@@ -221,7 +221,7 @@ public class LobbyView : MonoBehaviour
 
     private void ShowCoins()
     {
-        var wallet = Connection != null ? Connection.Wallet : null;
+        var wallet = Services.Wallet;
         if (wallet == null || !wallet.Loaded)
             return;
 
@@ -248,7 +248,7 @@ public class LobbyView : MonoBehaviour
     {
         if (freeCoinsButton != null)
             freeCoinsButton.interactable = false; // no double taps while it's asked
-        await Connection.Wallet.ClaimFreeCoinsAsync();
+        await Services.Wallet.ClaimFreeCoinsAsync();
         ShowCoins();
     }
 

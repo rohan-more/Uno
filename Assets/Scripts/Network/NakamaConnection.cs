@@ -5,19 +5,81 @@ using System.Threading.Tasks;
 using Nakama;
 using UnityEngine;
 
+/// <summary>The connection to the game server, by way of Services.Connection.</summary>
+public interface IConnectionService
+{
+    /// <summary>Whether F1 opens the testing tools.</summary>
+    bool DebugMenuEnabled { get; }
+
+    bool IsConnected { get; }
+
+    /// <summary>True from a dropped socket until it is connected again.</summary>
+    bool IsReconnecting { get; }
+
+    /// <summary>Server-assigned name, e.g. "SpryCrane15".</summary>
+    string DisplayName { get; }
+
+    /// <summary>Index into AvatarLibrary, assigned by the server on first login.</summary>
+    int AvatarIndex { get; }
+
+    /// <summary>This account's Nakama user id, used to spot yourself in a seat list.</summary>
+    string UserId { get; }
+
+    /// <summary>The match this client is in, or null.</summary>
+    string CurrentMatchId { get; }
+
+    /// <summary>Raised after a successful ConnectAsync, on the main thread.</summary>
+    event Action OnConnected;
+
+    /// <summary>Raised when the socket drops, with the reason the server gave. Reconnecting starts at once.</summary>
+    event Action<string> OnDisconnected;
+
+    /// <summary>Raised when a dropped socket is back. Rejoining the match follows on its own.</summary>
+    event Action OnReconnected;
+
+    /// <summary>Raised after reconnecting when the match we dropped out of can't be rejoined.</summary>
+    event Action OnMatchLost;
+
+    /// <summary>Every match message: the opcode (see UnoOpCodes) and the JSON body, on the main thread.</summary>
+    event Action<long, string> OnMatchState;
+
+    /// <summary>Signs in and opens the socket. False if the server can't be reached.</summary>
+    Task<bool> ConnectAsync();
+
+    /// <summary>Calls a server RPC.</summary>
+    Task<IApiRpc> RpcAsync(string rpcId, string payload = "{}");
+
+    /// <summary>A match with a free seat, or null if the call failed.</summary>
+    Task<string> FindMatchAsync();
+
+    /// <summary>Joins a match. The server replies with the current state.</summary>
+    Task<bool> JoinMatchAsync(string matchId);
+
+    /// <summary>Leaves the current match, if any. Safe to call twice.</summary>
+    Task LeaveMatchAsync();
+
+    /// <summary>Sends one action to the current match.</summary>
+    Task SendMatchStateAsync(long opCode, string json = "{}");
+
+    /// <summary>The match being played that we still hold a seat in, or null.</summary>
+    Task<string> MatchInProgressAsync();
+
+    /// <summary>Testing: closes the socket as if the network died.</summary>
+    Task DebugDropConnectionAsync();
+}
+
 /// <summary>
 /// Owns the Nakama client, session and socket for the whole app.
-/// Lives in the Boot scene and survives scene loads. UI scripts talk to this;
-/// nothing else should create a Client.
+/// Lives in the Startup scene and survives scene loads. Registers itself as
+/// Services.Connection, and the player's wallet as Services.Wallet; nothing
+/// else should create a Client.
 /// </summary>
-// Created before every other script, so anything reading Instance in its own
+// Created before every other script, so anything reading Services in its own
 // Awake or OnEnable finds it. Unity doesn't otherwise order scripts, not even
 // ones on the same object.
 [DefaultExecutionOrder(-1000)]
-public class NakamaConnection : MonoBehaviour
+public class NakamaConnection : MonoBehaviour, IConnectionService
 {
-    public static NakamaConnection Instance { get; private set; }
-
     [Header("Server")]
     [SerializeField] private string scheme = "http";
     [SerializeField] private string host = "127.0.0.1";
@@ -74,8 +136,7 @@ public class NakamaConnection : MonoBehaviour
     /// </summary>
     public event Action<long, string> OnMatchState;
 
-    /// <summary>This player's coins, as the server reports them.</summary>
-    public Wallet Wallet { get; private set; }
+    private Wallet _wallet;
 
     /// <summary>The match this client is in, or null.</summary>
     public string CurrentMatchId { get; private set; }
@@ -109,15 +170,18 @@ public class NakamaConnection : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
+        // Services.Connection is an interface, so "!= null" can't see a
+        // destroyed connection: ask Unity instead.
+        if (Services.Connection is NakamaConnection existing && existing != null && existing != this)
         {
             Destroy(gameObject);
             return;
         }
 
-        Instance = this;
+        Services.Register(this);
         DontDestroyOnLoad(gameObject);
-        Wallet = new Wallet(this);
+        _wallet = new Wallet(this);
+        Services.Register(_wallet);
 
         _multiInstanceProfiles = multiInstanceProfiles;
         _maxProfiles = Mathf.Max(1, maxProfiles);
@@ -453,8 +517,7 @@ public class NakamaConnection : MonoBehaviour
 
             Debug.Log($"Reconnected after {attempt + 1} attempt(s)");
             IsReconnecting = false;
-            OnReconnected?.Invoke();
-            _ = Wallet.RefreshAsync();
+            OnReconnected?.Invoke(); // the wallet refreshes itself on this
 
             // Back to the match we dropped out of; if it's gone (or our seat
             // went to a bot), ask the server where we stand.
@@ -539,6 +602,13 @@ public class NakamaConnection : MonoBehaviour
 
     private async void OnDestroy()
     {
+        // A duplicate destroyed in Awake owns nothing here
+        if (!ReferenceEquals(Services.Connection, this))
+            return;
+
+        Services.Unregister(this);
+        Services.Unregister(_wallet);
+
         _shuttingDown = true;
         if (_socket != null)
         {

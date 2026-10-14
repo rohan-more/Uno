@@ -29,7 +29,7 @@ public class ScreenFlow : MonoBehaviour
 
     private Coroutine _fade;
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     private void OnEnable()
     {

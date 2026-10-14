@@ -48,7 +48,7 @@ public class StartupLoader : MonoBehaviour
     private float startedAt;
     private bool running;
 
-    private static NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     private void Start()
     {
@@ -70,8 +70,8 @@ public class StartupLoader : MonoBehaviour
             Label = "Loading cards…", Weight = 0.30f,
             Run = async progress =>
             {
-                await GameAssets.PreloadAsync(progress);
-                return GameAssets.Loaded;
+                await Services.Assets.PreloadAsync(progress);
+                return Services.Assets.Loaded;
             },
         },
         new Step
@@ -82,7 +82,7 @@ public class StartupLoader : MonoBehaviour
         new Step
         {
             Label = "Loading your coins…", Weight = 0.25f,
-            Run = async _ => await Connection.Wallet.RefreshAsync(),
+            Run = async _ => await Services.Wallet.RefreshAsync(),
         },
     };
 
@@ -182,7 +182,7 @@ public class StartupLoader : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void StartFromStartupInEditor()
     {
-        if (SceneManager.GetActiveScene().name != StartupSceneName && NakamaConnection.Instance == null)
+        if (SceneManager.GetActiveScene().name != StartupSceneName && Services.Connection == null)
             SceneManager.LoadScene(StartupSceneName);
     }
 #endif

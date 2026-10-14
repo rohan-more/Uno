@@ -68,7 +68,7 @@ public class MatchPresenter : MonoBehaviour
              "call can't freeze the match.")]
     [SerializeField] private float stepTimeout = 3f;
 
-    private static CardDatabase database => GameAssets.Cards;
+    private static CardDatabase database => Services.Assets.Cards;
 
     [Tooltip("Log every server event as it plays, to see where a match stalls.")]
     [SerializeField] private bool logEvents = true;
@@ -87,7 +87,7 @@ public class MatchPresenter : MonoBehaviour
     private bool _busy;
     private float _stepStarted;
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     private void OnEnable()
     {

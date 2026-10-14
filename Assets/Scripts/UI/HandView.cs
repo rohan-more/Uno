@@ -15,7 +15,7 @@ public class HandView : MonoBehaviour
     [SerializeField] private int ownerPlayerId;
     [SerializeField] private CardItem cardPrefab;
     [SerializeField] private HandLayout layout;
-    private static CardDatabase database => GameAssets.Cards;
+    private static CardDatabase database => Services.Assets.Cards;
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Opponent")]

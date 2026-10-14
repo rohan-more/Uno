@@ -2,25 +2,58 @@ using System;
 using System.Threading.Tasks;
 using UnityEngine;
 
+/// <summary>This player's coins, by way of Services.Wallet.</summary>
+public interface IWalletService
+{
+    /// <summary>Raised whenever the balance or the free-coins timer changes.</summary>
+    event Action OnChanged;
+
+    /// <summary>False until the server has answered once.</summary>
+    bool Loaded { get; }
+
+    long Coins { get; }
+
+    /// <summary>How many coins a free claim gives.</summary>
+    int FreeCoins { get; }
+
+    bool FreeCoinsReady { get; }
+    TimeSpan FreeCoinsIn { get; }
+
+    Task<bool> RefreshAsync();
+
+    /// <summary>Claims free coins. False if they weren't ready yet (the timer is updated either way).</summary>
+    Task<bool> ClaimFreeCoinsAsync();
+
+    /// <summary>Testing: adds coins. Refused unless the server's debug tools are on.</summary>
+    Task<bool> DebugGrantAsync(int amount);
+
+    /// <summary>Testing: makes free coins claimable now.</summary>
+    Task<bool> DebugResetFreeCoinsAsync();
+}
+
 /// <summary>
 /// This player's coins, as the server last reported them. The server owns the
 /// real balance: every method here asks it and then shows what it says, so the
 /// client can never change coins by itself.
 ///
-/// Owned by NakamaConnection (NakamaConnection.Instance.Wallet) and refreshed
-/// on login and reconnect. Subscribe to OnChanged to show the balance.
+/// Registered as Services.Wallet by NakamaConnection. The loading screen
+/// fetches it first; it refreshes itself after a reconnect. Subscribe to
+/// OnChanged to show the balance.
 /// </summary>
-public class Wallet
+public class Wallet : IWalletService
 {
-    private readonly NakamaConnection connection;
+    private readonly IConnectionService connection;
 
     // When free coins become claimable, on Unity's clock. Set from the server's
     // "in N ms", so the client never compares its clock with the server's.
     private float freeCoinsReadyAt;
 
-    public Wallet(NakamaConnection connection)
+    public Wallet(IConnectionService connection)
     {
         this.connection = connection;
+
+        // Coins may have moved while we were away (e.g. a match paid out)
+        connection.OnReconnected += () => _ = RefreshAsync();
     }
 
     /// <summary>Raised whenever the balance or the free-coins timer changes.</summary>

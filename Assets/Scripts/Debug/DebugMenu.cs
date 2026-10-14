@@ -44,7 +44,7 @@ public class DebugMenu : MonoBehaviour
 
     private static DebugMenu instance;
 
-    private static NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     private void Awake()
     {
@@ -120,7 +120,7 @@ public class DebugMenu : MonoBehaviour
         if (goHomeKeepSeatButton != null)
             goHomeKeepSeatButton.interactable = Connection.IsConnected && inMatch;
 
-        var wallet = Connection.Wallet;
+        var wallet = Services.Wallet;
         if (wallet != null && wallet.Loaded)
         {
             SetText(coinsText, $"Coins: {wallet.Coins:N0}");
@@ -164,14 +164,14 @@ public class DebugMenu : MonoBehaviour
         }
 
         SetText(statusText, $"Granting {amount:N0} coins\u2026");
-        bool ok = await Connection.Wallet.DebugGrantAsync(amount);
+        bool ok = await Services.Wallet.DebugGrantAsync(amount);
         SetText(statusText, ok ? $"Granted {amount:N0} coins"
             : "Grant refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
     }
 
     private async void ResetFreeCoins()
     {
-        bool ok = await Connection.Wallet.DebugResetFreeCoinsAsync();
+        bool ok = await Services.Wallet.DebugResetFreeCoinsAsync();
         SetText(statusText, ok ? "Free coins are claimable now"
             : "Reset refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
     }

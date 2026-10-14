@@ -15,7 +15,7 @@ public class MatchView : MonoBehaviour
 {
     [SerializeField] private MatchPresenter presenter;
     [SerializeField] private MatchSeatsView seatsView;
-    private static CardDatabase database => GameAssets.Cards;
+    private static CardDatabase database => Services.Assets.Cards;
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Table")]
@@ -121,13 +121,13 @@ public class MatchView : MonoBehaviour
         if (leaveButton != null)
             leaveButton.onClick.AddListener(LeavePressed);
 
-        if (NakamaConnection.Instance != null)
+        if (Services.Connection != null)
         {
-            NakamaConnection.Instance.OnDisconnected += HandleConnectionLost;
-            NakamaConnection.Instance.OnReconnected += HandleReconnected;
-            NakamaConnection.Instance.OnMatchLost += HandleMatchLost;
+            Services.Connection.OnDisconnected += HandleConnectionLost;
+            Services.Connection.OnReconnected += HandleReconnected;
+            Services.Connection.OnMatchLost += HandleMatchLost;
         }
-        ShowReconnecting(NakamaConnection.Instance != null && NakamaConnection.Instance.IsReconnecting);
+        ShowReconnecting(Services.Connection != null && Services.Connection.IsReconnecting);
     }
 
     private void OnDisable()
@@ -157,11 +157,11 @@ public class MatchView : MonoBehaviour
         if (leaveButton != null)
             leaveButton.onClick.RemoveListener(LeavePressed);
 
-        if (NakamaConnection.Instance != null)
+        if (Services.Connection != null)
         {
-            NakamaConnection.Instance.OnDisconnected -= HandleConnectionLost;
-            NakamaConnection.Instance.OnReconnected -= HandleReconnected;
-            NakamaConnection.Instance.OnMatchLost -= HandleMatchLost;
+            Services.Connection.OnDisconnected -= HandleConnectionLost;
+            Services.Connection.OnReconnected -= HandleReconnected;
+            Services.Connection.OnMatchLost -= HandleMatchLost;
         }
     }
 
@@ -384,7 +384,7 @@ public class MatchView : MonoBehaviour
         if (turn.Seat != State.YourSeat && pendingWild != null)
         {
             pendingWild = null;
-            PopupManager.Instance.CloseActive();
+            Services.Popups.CloseActive();
         }
 
         RefreshControls();
@@ -424,7 +424,7 @@ public class MatchView : MonoBehaviour
         hoveringCard = null;
         StopAllCoroutines();
         cardProxy.HideImmediate();
-        PopupManager.Instance?.CloseActive();
+        Services.Popups?.CloseActive();
         RefreshControls();
 
         if (removedPanel != null)
@@ -445,8 +445,8 @@ public class MatchView : MonoBehaviour
 
     private void ReturnHome()
     {
-        if (NakamaConnection.Instance != null)
-            _ = NakamaConnection.Instance.LeaveMatchAsync();
+        if (Services.Connection != null)
+            _ = Services.Connection.LeaveMatchAsync();
 
         var loader = FindObjectOfType<MatchSceneLoader>();
         if (loader != null)
@@ -459,11 +459,11 @@ public class MatchView : MonoBehaviour
 
     private void LeavePressed()
     {
-        if (removed || PopupManager.Instance == null)
+        if (removed || Services.Popups == null)
             return;
 
         // Replaces any choice popup that's up; the turn timer keeps running meanwhile
-        PopupManager.Instance.Show(PopupType.ConfirmAction, new ConfirmChoice
+        Services.Popups.Show(PopupType.ConfirmAction, new ConfirmChoice
         {
             Message = "You'll lose the coins you wagered on it.",
             ConfirmLabel = "Leave",
@@ -553,7 +553,7 @@ public class MatchView : MonoBehaviour
             seconds = presenter.TurnSeconds;
         }
 
-        PopupManager.Instance.Show(PopupType.ChooseColor, new PopupCountdown
+        Services.Popups.Show(PopupType.ChooseColor, new PopupCountdown
         {
             TimeoutSeconds = PopupSeconds(seconds),
             OnTimeout = PickRandomColor,
@@ -564,13 +564,13 @@ public class MatchView : MonoBehaviour
     private void PickRandomColor()
     {
         chosenColor = (CardColor)Random.Range((int)CardColor.Red, (int)CardColor.Blue + 1);
-        PopupManager.Instance.CloseActive(); // sends the play, see OnColorPopupClosed
+        Services.Popups.CloseActive(); // sends the play, see OnColorPopupClosed
     }
 
     // Out of time on play-or-keep: keep it
     private void KeepOnTimeout()
     {
-        PopupManager.Instance.CloseActive();
+        Services.Popups.CloseActive();
         Pass();
     }
 
@@ -614,7 +614,7 @@ public class MatchView : MonoBehaviour
     private bool OwesCardsWithNoAnswer() => State.PendingDraw > 0 && presenter.PlayableCards().Count == 0;
 
     // No moves while reconnecting: they'd be dropped, and the snapshot on rejoin redraws everything
-    private bool CanAct() => !removed && (NakamaConnection.Instance == null || NakamaConnection.Instance.IsConnected)
+    private bool CanAct() => !removed && (Services.Connection == null || Services.Connection.IsConnected)
                              && State.IsYourTurn && !awaitingServer && pendingWild == null;
 
     private async void Send(System.Threading.Tasks.Task send)
@@ -666,7 +666,7 @@ public class MatchView : MonoBehaviour
         if (choosing && !choiceOpen)
             OpenDrawnChoice();
         else if (!choosing && choiceOpen)
-            PopupManager.Instance?.CloseActive(); // the turn moved on without an answer
+            Services.Popups?.CloseActive(); // the turn moved on without an answer
 
         if (yourTurnIndicator != null)
             yourTurnIndicator.SetActive(yourTurn);
@@ -679,11 +679,11 @@ public class MatchView : MonoBehaviour
 
     private void OpenDrawnChoice()
     {
-        if (PopupManager.Instance == null)
+        if (Services.Popups == null)
             return;
 
         choiceOpen = true;
-        PopupManager.Instance.Show(PopupType.DrawnCardChoice, new DrawnCardChoice
+        Services.Popups.Show(PopupType.DrawnCardChoice, new DrawnCardChoice
         {
             OnPlay = PlayDrawnCard,
             OnKeep = Pass,

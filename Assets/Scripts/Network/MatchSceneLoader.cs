@@ -19,7 +19,7 @@ public class MatchSceneLoader : MonoBehaviour
 
     private bool loading;
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     // Start, not OnEnable: by then every Awake has run, so NakamaConnection exists
     private void Start()

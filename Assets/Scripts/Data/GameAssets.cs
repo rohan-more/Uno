@@ -5,36 +5,54 @@ using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
 using Object = UnityEngine.Object;
 
+/// <summary>The game's art, by way of Services.Assets.</summary>
+public interface IAssetService
+{
+    /// <summary>Card definitions and art; CardDatabase.CardBack is the shared back.</summary>
+    CardDatabase Cards { get; }
+
+    /// <summary>Avatar sprites, indexed by the server's avatar number.</summary>
+    AvatarLibrary Avatars { get; }
+
+    /// <summary>True once both libraries are loaded.</summary>
+    bool Loaded { get; }
+
+    /// <summary>Loads everything without blocking, reporting 0-1 as it goes. Safe to call more than once.</summary>
+    Task PreloadAsync(IProgress<float> progress = null);
+}
+
 /// <summary>
 /// The one place game art comes from: the card library (faces and the shared
 /// back) and the avatar library, loaded through Addressables by address.
 ///
-/// Boot preloads both while it connects, so nothing waits later. Reading
+/// The loading screen preloads both, so nothing waits later. Reading
 /// Cards or Avatars before that (e.g. pressing Play in MatchScene directly)
 /// loads on the spot instead. They stay loaded for the app's lifetime.
 ///
 /// Addresses: mark CardDatabase and AvatarLibrary Addressable with the names
 /// below, each in a group with its sprite atlas.
+///
+/// Registered as Services.Assets at app start.
 /// </summary>
-public static class GameAssets
+public class GameAssets : IAssetService
 {
     public const string CardsAddress = "CardDatabase";
     public const string AvatarsAddress = "AvatarLibrary";
 
-    private static CardDatabase cards;
-    private static AvatarLibrary avatars;
+    private CardDatabase cards;
+    private AvatarLibrary avatars;
 
     /// <summary>Card definitions and art; CardDatabase.CardBack is the shared back.</summary>
-    public static CardDatabase Cards => cards != null ? cards : cards = LoadNow<CardDatabase>(CardsAddress);
+    public CardDatabase Cards => cards != null ? cards : cards = LoadNow<CardDatabase>(CardsAddress);
 
     /// <summary>Avatar sprites, indexed by the server's avatar number.</summary>
-    public static AvatarLibrary Avatars => avatars != null ? avatars : avatars = LoadNow<AvatarLibrary>(AvatarsAddress);
+    public AvatarLibrary Avatars => avatars != null ? avatars : avatars = LoadNow<AvatarLibrary>(AvatarsAddress);
 
     /// <summary>
     /// Loads both libraries without blocking, reporting 0-1 as it goes. Safe to
     /// call more than once.
     /// </summary>
-    public static async Task PreloadAsync(IProgress<float> progress = null)
+    public async Task PreloadAsync(IProgress<float> progress = null)
     {
         var cardsLoad = cards == null ? Addressables.LoadAssetAsync<CardDatabase>(CardsAddress) : default;
         var avatarsLoad = avatars == null ? Addressables.LoadAssetAsync<AvatarLibrary>(AvatarsAddress) : default;
@@ -59,7 +77,7 @@ public static class GameAssets
     }
 
     /// <summary>True once both libraries are loaded.</summary>
-    public static bool Loaded => cards != null && avatars != null;
+    public bool Loaded => cards != null && avatars != null;
 
     private static float Progress<T>(AsyncOperationHandle<T> handle) =>
         !handle.IsValid() || handle.IsDone ? 1f : handle.PercentComplete;
