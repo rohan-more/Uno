@@ -30,18 +30,34 @@ public class LobbyView : MonoBehaviour
     [SerializeField] private string reconnectText = "REJOIN MATCH";
 
     [Header("Coins")]
+    [Tooltip("The balance; counts up or down when it changes.")]
     [SerializeField] private TMP_Text coinsText;
+    [SerializeField] private float coinsCountSeconds = 0.8f;
+    [Tooltip("Tint while the balance counts up or down. Alpha 0 keeps the text's colour.")]
+    [SerializeField] private Color coinsGainColor = new(0.45f, 1f, 0.45f, 1f);
+    [SerializeField] private Color coinsLossColor = new(1f, 0.45f, 0.45f, 1f);
     [Tooltip("Claims free coins; greyed out while they're on cooldown.")]
     [SerializeField] private Button freeCoinsButton;
     [Tooltip("\"FREE 100\" when claimable, otherwise how long until they are.")]
     [SerializeField] private TMP_Text freeCoinsText;
 
     private float nextCountdownRefresh;
+    private NumberCounter coinsCounter;
 
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
 
     private static IConnectionService Connection => Services.Connection;
+
+    private void Awake()
+    {
+        coinsCounter = new NumberCounter(coinsText, CoinFormat.Short)
+        {
+            Seconds = coinsCountSeconds,
+            GainColor = coinsGainColor,
+            LossColor = coinsLossColor,
+        };
+    }
 
     private void OnEnable()
     {
@@ -211,6 +227,8 @@ public class LobbyView : MonoBehaviour
 
     private void Update()
     {
+        coinsCounter.Tick();
+
         // The free-coins countdown moves on its own; redraw it now and then
         if (Time.unscaledTime >= nextCountdownRefresh)
         {
@@ -225,8 +243,7 @@ public class LobbyView : MonoBehaviour
         if (wallet == null || !wallet.Loaded)
             return;
 
-        if (coinsText != null)
-            coinsText.text = wallet.Coins.ToString("N0");
+        coinsCounter.CountTo(wallet.Coins);
 
         if (freeCoinsButton != null)
             freeCoinsButton.interactable = wallet.FreeCoinsReady;
