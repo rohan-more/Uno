@@ -36,10 +36,6 @@ public class LobbyView : MonoBehaviour
     [Tooltip("Tint while the balance counts up or down. Alpha 0 keeps the text's colour.")]
     [SerializeField] private Color coinsGainColor = new(0.45f, 1f, 0.45f, 1f);
     [SerializeField] private Color coinsLossColor = new(1f, 0.45f, 0.45f, 1f);
-    [Tooltip("Claims free coins; greyed out while they're on cooldown.")]
-    [SerializeField] private Button freeCoinsButton;
-    [Tooltip("\"FREE 100\" when claimable, otherwise how long until they are.")]
-    [SerializeField] private TMP_Text freeCoinsText;
 
     private float nextCountdownRefresh;
     private NumberCounter coinsCounter;
@@ -72,9 +68,6 @@ public class LobbyView : MonoBehaviour
             Connection.OnDisconnected += OnDisconnected;
             Connection.OnReconnected += OnReconnected;
         }
-
-        if (freeCoinsButton != null)
-            freeCoinsButton.onClick.AddListener(OnFreeCoinsClicked);
         WatchWallet();
     }
 
@@ -85,9 +78,7 @@ public class LobbyView : MonoBehaviour
 
         if (cancelButton != null)
             cancelButton.onClick.RemoveListener(OnCancelClicked);
-
-        if (freeCoinsButton != null)
-            freeCoinsButton.onClick.RemoveListener(OnFreeCoinsClicked);
+        
         if (Services.Wallet != null)
             Services.Wallet.OnChanged -= ShowCoins;
 
@@ -244,11 +235,6 @@ public class LobbyView : MonoBehaviour
             return;
 
         coinsCounter.CountTo(wallet.Coins);
-
-        if (freeCoinsButton != null)
-            freeCoinsButton.interactable = wallet.FreeCoinsReady;
-        if (freeCoinsText != null)
-            freeCoinsText.text = wallet.FreeCoinsReady ? $"FREE {wallet.FreeCoins}" : CountdownText(wallet.FreeCoinsIn);
     }
 
     /// <summary>"3h 12m", "12m 05s" or "45s".</summary>
@@ -260,15 +246,7 @@ public class LobbyView : MonoBehaviour
             return $"{left.Minutes}m {left.Seconds:00}s";
         return $"{Mathf.CeilToInt((float)left.TotalSeconds)}s";
     }
-
-    private async void OnFreeCoinsClicked()
-    {
-        if (freeCoinsButton != null)
-            freeCoinsButton.interactable = false; // no double taps while it's asked
-        await Services.Wallet.ClaimFreeCoinsAsync();
-        ShowCoins();
-    }
-
+    
     private void OnDisconnected(string reason)
     {
         ShowSearching(false);
