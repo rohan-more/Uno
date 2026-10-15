@@ -1,6 +1,6 @@
 # Coins, stakes and game over: plan
 
-Status: **phases 1 and 2 done; free coins reworked into a rescue.** Built on branch
+Status: **phases 1 and 2 done; free coins reworked into a rescue, being tested.** Built on branch
 `Rohan/GameOverRewards`, one phase at a time. Every number here is a server
 setting, tunable from the Nakama console like the turn timer.
 
@@ -17,7 +17,8 @@ setting, tunable from the Nakama console like the turn timer.
 ### How a game ends
 
 The first player to empty their hand wins, and the game ends at once. Everyone
-else is ranked by the **penalty value** of the cards still in their hand:
+else is ranked by **how many cards they have left**, fewest first. Equal counts
+are split by the **penalty value** of those cards, lower first:
 
 | Card | Penalty |
 |---|---|
@@ -25,8 +26,13 @@ else is ranked by the **penalty value** of the cards still in their hand:
 | Skip, Reverse, Draw Two | 20 |
 | Wild, Wild Draw Four | 50 |
 
-Fewer points ranks higher, then fewer cards. Players equal on both **share the
-place** (shown as "=2").
+Players equal on both **share the place** (shown as "=2"), which is rare.
+
+The results screen shows only places and coins (and cards left), never points.
+So the rule players can see is simply "fewer cards ranks higher"; the penalty
+quietly makes a hand full of wilds the worse of two equal ones. An earlier
+version ranked by points first, and a player holding one Wild could come last
+behind someone holding three low cards, which looked like a bug.
 
 ### Coins
 
@@ -175,7 +181,33 @@ refused unless the server setting `debugTools` is on, which it is only locally.
 |---|---|
 | `debug_grant_coins` | Adds an amount to your wallet (ledger kind `debug`); a negative amount takes coins away, to go broke |
 | `debug_free_coins_now` | If you're below the line, tops up now instead of in 4 hours |
-| `DEBUG_WIN` (phase 3) | Match op: ends the game now with a chosen seat as the winner, the others ranked by their hands, then pays out and shows the results like any game over |
+| `DEBUG_WIN` (phase 3) | Match op `{ seat }`: that seat wins now. See below |
+| `DEBUG_ONE_CARD` (phase 3) | Match op `{ seat }`: that seat's hand becomes a single Wild, so it wins on its next turn. See below |
+
+### Rigging a game over
+
+Both match ops are refused unless the debug tools are on, and only during
+play. They pick a seat by its **server seat number**, so any player can be made
+to win, bot or human.
+
+- **Instant win** (`DEBUG_WIN`) empties the seat's hand, as if it had just
+  played its last card, then runs the **same game-end code** a real final play
+  does. The winner shows 0 cards; everyone else keeps their real hand, so the
+  ranking, ties, payout, escrow, ledger and results are exactly what a real
+  game would produce. There are no separate debug rules to drift out of step.
+- **Down to one card** (`DEBUG_ONE_CARD`) swaps the seat's hand for one Wild,
+  which is always playable, and play carries on. On that seat's next turn the
+  player (or bot) plays it for real. This covers what an instant win skips:
+  the last card's play and animation, the game ending mid-turn, and a bot
+  winning on its own.
+
+Specific hands, such as two losers tied on points to check the pot split, are
+tested in the Go unit tests, where every hand can be set exactly.
+
+**F1 menu:** a dropdown of the players in table order ("You", then clockwise),
+filled from the match state, each option holding that player's server seat;
+then **Instant win** and **Down to one card** buttons. Both are disabled
+outside a match.
 
 The menu is meant to grow: later, items or anything else worth granting.
 
@@ -184,6 +216,7 @@ The menu is meant to grow: later, items or anything else worth granting.
 | Change | Detail |
 |---|---|
 | New client op `LEAVE_MATCH` | Leave now: a bot takes the seat at once and you forfeit. |
+| Debug ops `DEBUG_WIN`, `DEBUG_ONE_CARD` | `{ seat }`; refused unless the debug tools are on. |
 | Drops keep your seat record | A plain disconnect no longer clears `current_match`, so the client can find and rejoin the match. |
 | One takeover rule | `missedTurnsForBot` becomes 3 and applies to disconnected players too; `disconnectBotMs` is removed. |
 | `GAME_OVER` gains `results` | `[{ seat, place, cardsLeft, penalty, coins }]`, plus `stake` and `pot`. Bot seats carry the coins they would have won. |
@@ -202,8 +235,8 @@ The menu is meant to grow: later, items or anything else worth granting.
 - **Reconnecting:** after a dropped socket the client reconnects and rejoins
   the match it was in; at startup it asks `current_match` and goes straight
   back to a match in progress.
-- **Debug menu (F1):** grant or take coins, free coins now, and (phase 3) win
-  the match now for any seat.
+- **Debug menu (F1):** grant or take coins, free coins now, and (phase 3) pick
+  any player to win instantly or to be down to one card.
 - **Results** (last phase), laid out like Card Party's: place (with "=2" for
   ties), avatar, name, cards left, coins won, then back home.
 
@@ -220,10 +253,10 @@ Each phase ships on its own, with server tests and `PROTOCOL.md` updated.
    calls `current_match` at startup, so a restarted client never goes back.
 2. **Wallet.** Starting coins, balance on the home screen, free coins every 4
    hours, the debug RPCs and the F1 menu.
-3. **Stakes.** The new game end and penalty ranking, charging at match start,
+3. **Stakes.** The new game end and its ranking, charging at match start,
    paying at game over, refunds, the escrow record and its cleanup. First the
-   `DEBUG_WIN` op and an F1 "win now" button, to reach a game over in seconds
-   while building the rest.
+   new game end with the two rigging tools (`DEBUG_WIN`, `DEBUG_ONE_CARD`) and
+   their F1 controls, to reach a game over in seconds while building the rest.
 4. **Results screen.** The Card Party-style leaderboard, then back home.
 5. **Later.** Stake tiers, XP and levels, a "Next game" countdown for a rematch,
    bot thinking-time variation.

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -141,7 +142,8 @@ func TestMissedTurns_QuickMatchKeepsThePlayer(t *testing.T) {
 	if s.missedTurns[0] < s.cfg.MissedTurnsForBot {
 		t.Fatalf("missedTurns = %d, the test should have run past the limit", s.missedTurns[0])
 	}
-	if s.seats[0].kind != KindHuman || s.closeRequest {
+	// The bots may well win meanwhile and close the match; that's fine.
+	if s.seats[0].kind != KindHuman || (s.closeRequest && !s.game.Over()) {
 		t.Error("a quick match should keep an idle player seated and the match open")
 	}
 	if got := d.removed(); len(got) != 0 {
@@ -476,5 +478,61 @@ func TestTurnGap_DelaysTheNextMove(t *testing.T) {
 	}
 	if len(s.game.Discard) == discardBefore && len(s.game.Players[0].Hand) == game.HandSize {
 		t.Error("the bot never moved after its pause")
+	}
+}
+
+func debugCtx() context.Context {
+	return context.WithValue(context.Background(), runtime.RUNTIME_CTX_ENV, map[string]string{debugToolsEnv: "true"})
+}
+
+func sendDebug(s *MatchState, ctx context.Context, d *fakeDispatcher, opCode int64, seat int) {
+	msg := fakeMatchData{fakePresence: fakePresence{userID: "u0"}, opCode: opCode, data: []byte(fmt.Sprintf(`{"seat":%d}`, seat))}
+	s.handleMessages(ctx, testLogger{}, nil, d, []runtime.MatchData{msg})
+}
+
+func TestDebugWin_RefusedUnlessTheToolsAreOn(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	d := &fakeDispatcher{}
+
+	sendDebug(s, context.Background(), d, OpDebugWin, 1)
+
+	if s.game.Over() || !d.hasError(ErrCodeDebugToolsOff) {
+		t.Error("DEBUG_WIN must be refused while the debug tools are off")
+	}
+}
+
+func TestDebugWin_AnySeatWinsAndTheGameEnds(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	d := &fakeDispatcher{}
+
+	sendDebug(s, debugCtx(), d, OpDebugWin, 3) // a bot seat
+
+	over := d.events(EvGameOver)
+	if !s.game.Over() || s.phase != phaseDone || len(over) != 1 {
+		t.Fatalf("over %v phase %s GAME_OVER events %d", s.game.Over(), s.phase, len(over))
+	}
+	if over[0].Seat != 3 || len(over[0].Results) != seatCount || over[0].Results[0].CardsLeft != 0 {
+		t.Errorf("GAME_OVER = %+v, want seat 3 first with an empty hand", over[0])
+	}
+}
+
+func TestDebugOneCard_SendsEveryoneAFreshSnapshot(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	s.seats[2].presence = fakePresence{userID: "u2"}
+	d := &fakeDispatcher{}
+
+	sendDebug(s, debugCtx(), d, OpDebugOneCard, 2)
+
+	if len(s.game.Players[2].Hand) != 1 || s.game.Over() {
+		t.Fatalf("seat 2 hand = %v, want one card and the game on", s.game.Players[2].Hand)
+	}
+	if got := d.count(OpGameState); got != 2 {
+		t.Errorf("GAME_STATE sent %d times, want once to each human", got)
 	}
 }

@@ -561,6 +561,9 @@ func (s *MatchState) handleMessages(ctx context.Context, logger runtime.Logger, 
 				s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, RemovedLeft)
 			}
 
+		case OpDebugWin, OpDebugOneCard:
+			s.handleDebug(ctx, logger, dispatcher, m)
+
 		default:
 			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, "unknown opcode")
 		}
@@ -603,6 +606,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 		TurnMsLeft:  s.turnTicks * msPerTick,
 		StartsInMs:  s.preMatchTicks * msPerTick,
 		Ranking:     g.Ranking,
+		Results:     toResultMsgs(g.Results),
 		Seq:         s.seq,
 	}
 
@@ -926,6 +930,47 @@ func (s *MatchState) handleExtendTurn(logger runtime.Logger, dispatcher runtime.
 	s.turnTicks = s.cfg.TurnMs / msPerTick
 	s.missedTurns[seat] = 0
 	s.broadcastEvents(logger, dispatcher, []EventMsg{{Type: EvTurnExtended, Seat: seat, TurnMs: s.cfg.TurnMs}})
+}
+
+// handleDebug rigs the game for testing: DEBUG_WIN makes a seat win now,
+// DEBUG_ONE_CARD leaves a seat one Wild away from winning. Any seat may be
+// chosen, bot or human. Refused unless the server runs with the debug tools on.
+func (s *MatchState) handleDebug(ctx context.Context, logger runtime.Logger, dispatcher runtime.MatchDispatcher, m runtime.MatchData) {
+	if !debugToolsOn(ctx) {
+		s.sendError(logger, dispatcher, m, ErrCodeDebugToolsOff, "debug tools are off on this server")
+		return
+	}
+	if s.phase != phasePlaying || s.game == nil || s.preMatchTicks > 0 || s.game.Over() {
+		s.sendError(logger, dispatcher, m, ErrCodeGameNotStarted, "only while the game is being played")
+		return
+	}
+	var req DebugSeatReq
+	if err := json.Unmarshal(m.GetData(), &req); err != nil || req.Seat < 0 || req.Seat >= seatCount {
+		s.sendError(logger, dispatcher, m, ErrCodeBadMessage, "expected {\"seat\": 0-3}")
+		return
+	}
+
+	if m.GetOpCode() == OpDebugWin {
+		events, err := s.game.DebugWin(req.Seat)
+		if err != nil {
+			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, err.Error())
+			return
+		}
+		logger.WithField("seat", req.Seat).Warn("debug: instant win")
+		s.afterAction(logger, dispatcher, req.Seat, events, nil)
+		return
+	}
+
+	if err := s.game.DebugOneCard(req.Seat); err != nil {
+		s.sendError(logger, dispatcher, m, ErrCodeBadMessage, err.Error())
+		return
+	}
+	logger.WithField("seat", req.Seat).Warn("debug: down to one card")
+
+	// Hands changed outside normal play, so everyone gets a fresh snapshot.
+	for i := range s.seats {
+		s.sendGameState(logger, dispatcher, i)
+	}
 }
 
 // parseAction turns one match message into a rules action.

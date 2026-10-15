@@ -23,8 +23,8 @@ type Player struct {
 	ID   string
 	Hand []Card
 
-	// Place is 0 while the player is still in the game, then their finishing
-	// position: 1 for the first to empty their hand, 2 for the next, and so on.
+	// Place is 0 until the game ends, then 1 for the winner and 2-4 for the
+	// rest by the cards left in hand. Tied players share a place.
 	Place int
 }
 
@@ -48,10 +48,10 @@ type GameState struct {
 	// Their only legal moves are then to play that card or Pass.
 	DrawnCard *Card
 
-	// Ranking lists seats in finishing order. Players who empty their hand are
-	// added as they finish; the game ends when one player is left, and they
-	// are added last.
+	// Ranking lists seats in place order and Results each seat's line; both
+	// are empty until the game ends (see end.go).
 	Ranking []int
+	Results []Result
 }
 
 // NewGame shuffles, deals HandSize cards to each player and turns over a
@@ -110,25 +110,9 @@ func (s *GameState) pickStartCard() error {
 	return nil
 }
 
-// Over reports whether the game has ended: everyone has a place.
+// Over reports whether the game has ended: someone emptied their hand.
 func (s *GameState) Over() bool {
-	return len(s.Ranking) == len(s.Players)
-}
-
-// InGame reports whether seat hasn't finished yet.
-func (s *GameState) InGame(seat int) bool {
-	return s.Players[seat].Place == 0
-}
-
-// inGameCount returns how many players haven't finished.
-func (s *GameState) inGameCount() int {
-	n := 0
-	for seat := range s.Players {
-		if s.InGame(seat) {
-			n++
-		}
-	}
-	return n
+	return s.Results != nil
 }
 
 // TopCard returns the card on top of the discard pile.
@@ -144,22 +128,11 @@ func (s *GameState) TopDef() CardDef {
 }
 
 // nextSeat returns the seat `step` players away from `from` in the current
-// direction, wrapping around the table and skipping finished players.
-// step 1 = next player, step 2 = skip one. `from` may itself be finished.
+// direction, wrapping around the table. step 1 = next player, 2 = skip one.
 func (s *GameState) nextSeat(from, step int) int {
-	if s.inGameCount() == 0 {
-		return from // nobody to move to; avoids looping forever
-	}
 	n := len(s.Players)
-	seat := from
-	for moved := 0; moved < step; {
-		// % keeps the sign of the left side in Go (-1 % 4 == -1), so add n back.
-		seat = ((seat+s.Direction)%n + n) % n
-		if s.InGame(seat) {
-			moved++
-		}
-	}
-	return seat
+	// % keeps the sign of the left side in Go (-1 % 4 == -1), so add n back.
+	return ((from+s.Direction*step)%n + n) % n
 }
 
 // DrawnCardIsWild reports whether the card drawn this turn, still waiting to

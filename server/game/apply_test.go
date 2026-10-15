@@ -306,118 +306,34 @@ func TestDraw_PlayableThenPass(t *testing.T) {
 	}
 }
 
-func TestFinish_GameContinues(t *testing.T) {
+func TestFinish_FirstEmptyHandEndsTheGame(t *testing.T) {
 	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1"}, {"RED_2", "RED_3"}, {"RED_4", "RED_6"}}})
 
 	ev := play(t, s, 0, "RED_1", "")
 
-	if s.Over() || s.Players[0].Place != 1 || len(s.Ranking) != 1 || s.Current != 1 {
-		t.Fatalf("over %v place %d ranking %v current %d; want game on, seat 0 first, seat 1 next",
-			s.Over(), s.Players[0].Place, s.Ranking, s.Current)
+	if !s.Over() || s.Players[0].Place != 1 {
+		t.Fatalf("over %v place %d; want the game over with seat 0 first", s.Over(), s.Players[0].Place)
 	}
-	if got := eventTypes(ev); len(got) != 3 || got[1] != EvPlayerFinished || ev[1].Place != 1 {
-		t.Errorf("events = %+v", ev)
+	if got := eventTypes(ev); len(got) != 2 || got[1] != EvGameOver || ev[1].Seat != 0 {
+		t.Errorf("events = %+v, want CARD_PLAYED then GAME_OVER for seat 0", ev)
 	}
-
-	// Seat 0 is now skipped: 1 -> 2 -> 1.
-	play(t, s, 1, "RED_2", "")
-	if s.Current != 2 {
-		t.Errorf("current = %d, want 2", s.Current)
-	}
-	play(t, s, 2, "RED_4", "")
-	if s.Current != 1 {
-		t.Errorf("current = %d, want 1 (seat 0 has finished)", s.Current)
-	}
-	_, err := s.Apply(0, Action{Type: DrawCard})
-	wantErr(t, err, ErrNotYourTurn)
-}
-
-func TestFinish_LastTwoEndsGame(t *testing.T) {
-	s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_1"}, {"RED_2", "RED_3"}}})
-
-	ev := play(t, s, 0, "RED_1", "")
-
-	if !s.Over() {
-		t.Fatal("game should be over with one player left")
-	}
-	if len(s.Ranking) != 2 || s.Ranking[0] != 0 || s.Ranking[1] != 1 || s.Players[1].Place != 2 {
-		t.Errorf("ranking %v, places %d/%d; want [0 1]", s.Ranking, s.Players[0].Place, s.Players[1].Place)
-	}
-	want := []EventType{EvCardPlayed, EvPlayerFinished, EvPlayerFinished, EvGameOver}
-	got := eventTypes(ev)
-	if len(got) != len(want) {
-		t.Fatalf("events = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("events = %v, want %v", got, want)
-		}
-	}
-	if r := ev[3].Ranking; len(r) != 2 || r[0] != 0 || r[1] != 1 {
-		t.Errorf("GAME_OVER ranking = %v, want [0 1]", r)
+	if len(ev[1].Results) != 3 || ev[1].Results[0].Seat != 0 {
+		t.Errorf("results = %+v", ev[1].Results)
 	}
 	_, err := s.Apply(1, Action{Type: DrawCard})
 	wantErr(t, err, ErrGameOver)
 }
 
-func TestFinish_LastCardEffectStillApplies(t *testing.T) {
-	t.Run("draw two", func(t *testing.T) {
-		s := rig(t, table{
-			top:   "RED_5",
-			hands: [][]string{{"RED_DRAW_TWO"}, {"BLUE_1", "BLUE_2"}, {"GREEN_3", "GREEN_4"}},
-			deck:  []string{"YELLOW_1", "YELLOW_2"},
-		})
-		play(t, s, 0, "RED_DRAW_TWO", "")
-		if s.PendingDraw != 2 || s.Current != 1 {
-			t.Fatalf("pending %d current %d, want 2 and 1", s.PendingDraw, s.Current)
-		}
-		do(t, s, 1, DrawCard)
-		if len(s.Players[1].Hand) != 4 || s.Current != 2 {
-			t.Errorf("hand %d current %d, want 4 and 2", len(s.Players[1].Hand), s.Current)
-		}
-	})
-	t.Run("skip", func(t *testing.T) {
-		s := rig(t, table{top: "RED_5", hands: [][]string{{"RED_SKIP"}, {"RED_1", "RED_2"}, {"RED_3", "RED_4"}}})
-		play(t, s, 0, "RED_SKIP", "")
-		if s.Current != 2 {
-			t.Errorf("current = %d, want 2 (seat 1 skipped)", s.Current)
-		}
-	})
-	t.Run("reverse by the finisher", func(t *testing.T) {
-		// Three players; seat 1 finishes on a Reverse, leaving two. Play just
-		// continues in the new direction: 1 -> 0.
-		s := rig(t, table{
-			top:   "RED_5",
-			hands: [][]string{{"RED_1", "RED_2"}, {"RED_REVERSE"}, {"RED_3", "RED_4"}},
-		})
-		s.Current = 1
-		play(t, s, 1, "RED_REVERSE", "")
-		if s.Direction != -1 || s.Current != 0 {
-			t.Errorf("direction %d current %d, want -1 and 0", s.Direction, s.Current)
-		}
-	})
-	t.Run("wild draw four", func(t *testing.T) {
-		s := rig(t, table{top: "RED_5", hands: [][]string{{"WILD_DRAW_FOUR"}, {"BLUE_1", "BLUE_2"}, {"GREEN_3", "GREEN_4"}}})
-		play(t, s, 0, "WILD_DRAW_FOUR", Green)
-		if s.PendingDraw != 4 || s.ActiveColor != Green || s.Current != 1 {
-			t.Errorf("pending %d color %s current %d, want 4 GREEN 1", s.PendingDraw, s.ActiveColor, s.Current)
-		}
-	})
-}
-
-func TestReverse_TwoLeftOfFourActsAsSkip(t *testing.T) {
+func TestFinish_LastCardEffectDoesNotHappen(t *testing.T) {
 	s := rig(t, table{
 		top:   "RED_5",
-		hands: [][]string{{}, {"RED_REVERSE", "RED_1"}, {}, {"RED_2", "RED_3"}},
+		hands: [][]string{{"RED_DRAW_TWO"}, {"BLUE_1", "BLUE_2"}, {"GREEN_3", "GREEN_4"}},
+		deck:  []string{"YELLOW_1", "YELLOW_2"},
 	})
-	s.finish(0)
-	s.finish(2)
-	s.Current = 1
-
-	play(t, s, 1, "RED_REVERSE", "")
-
-	if s.Current != 1 {
-		t.Errorf("current = %d, want 1 (two players left, Reverse acts as Skip)", s.Current)
+	play(t, s, 0, "RED_DRAW_TWO", "")
+	if !s.Over() || s.PendingDraw != 0 || len(s.Players[1].Hand) != 2 {
+		t.Errorf("over %v pending %d hand %d; want the game over and nobody drawing",
+			s.Over(), s.PendingDraw, len(s.Players[1].Hand))
 	}
 }
 
@@ -441,9 +357,6 @@ func TestRandomGames(t *testing.T) {
 				t.Fatalf("seed %d: game didn't finish in 10000 actions", seed)
 			}
 			seat := s.Current
-			if !s.InGame(seat) {
-				t.Fatalf("seed %d step %d: finished seat %d has the turn", seed, step, seat)
-			}
 
 			var a Action
 			if playable := s.PlayableCards(seat); len(playable) > 0 {
@@ -464,11 +377,14 @@ func TestRandomGames(t *testing.T) {
 		}
 
 		seen := map[int]bool{}
-		for i, seat := range s.Ranking {
-			if seen[seat] || s.Players[seat].Place != i+1 {
-				t.Fatalf("seed %d: bad ranking %v", seed, s.Ranking)
+		for i, r := range s.Results {
+			if seen[r.Seat] || s.Ranking[i] != r.Seat || s.Players[r.Seat].Place != r.Place {
+				t.Fatalf("seed %d: bad results %+v", seed, s.Results)
 			}
-			seen[seat] = true
+			seen[r.Seat] = true
+		}
+		if len(seen) != players || s.Results[0].CardsLeft != 0 || s.Results[0].Place != 1 {
+			t.Fatalf("seed %d: want every seat ranked and an empty-handed winner: %+v", seed, s.Results)
 		}
 	}
 }

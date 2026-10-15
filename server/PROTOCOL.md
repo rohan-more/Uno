@@ -124,7 +124,9 @@ reconnect, and in reply to `REQUEST_STATE`:
 - `hand` is the receiver's own hand only; `you` is their seat.
 - `drawnCardId` is the card the current player drew and may still play, or -1.
   It is only ever sent to that player.
-- `place` is 0 while playing, else the finishing position.
+- `place` is 0 while playing, else the place at the end (see section 10).
+- `results` appears once the game is over, as in `GAME_OVER`, so a client that
+  rejoins then can still show them.
 - `startsInMs` is only present before the first turn.
 - Timers are always **time remaining in milliseconds**, never a clock time, so
   client clock skew does not matter.
@@ -139,6 +141,11 @@ reconnect, and in reply to `REQUEST_STATE`:
 | 5 | `REQUEST_STATE` | `{}` | Any time; the server replies with `GAME_STATE` |
 | 6 | `EXTEND_TURN` | `{}` | Your turn, holding a drawn **wild** you are about to play, once per turn. Restarts your clock so choosing its color gets a full turn |
 | 7 | `LEAVE_MATCH` | `{}` | During play: quit now. A bot takes the seat at once and you get `REMOVED` with `LEFT`. In the lobby, just leave the match |
+| 90 | `DEBUG_WIN` | `{ "seat": 2 }` | **Debug only.** During play: that seat (any, bot or human) wins now, as if it had played its last card |
+| 91 | `DEBUG_ONE_CARD` | `{ "seat": 2 }` | **Debug only.** During play: that seat's hand becomes one Wild; everyone gets a fresh `GAME_STATE` |
+
+The debug ops answer `DEBUG_TOOLS_OFF` unless the server runs with
+`UNO_DEBUG_TOOLS=true` (see section 11).
 
 There is no start action: the countdown starts the match. The color for a wild
 is chosen **before** sending, so a play is always one message.
@@ -171,8 +178,7 @@ color for a drawn wild is a second choice in the same turn, so the client sends
 | `TURN_EXTENDED` | `seat, turnMs` | `EXTEND_TURN` was accepted: that seat's clock restarts at `turnMs` |
 | `TURN_TIMED_OUT` | `seat` | Precedes the automatic draw's events |
 | `PLAYER_CONNECTION` | `seat, connected` | Grey out the nameplate |
-| `PLAYER_FINISHED` | `seat, place` | Play continues among the rest |
-| `GAME_OVER` | `ranking` | Seats in finishing order |
+| `GAME_OVER` | `seat, ranking, results` | `seat` won. See section 10 |
 
 **op 103 `ERROR`** — to the offending client only; nothing changed:
 
@@ -192,6 +198,7 @@ color for a drawn wild is a second choice in the same turn, so the client sends
 | `GAME_NOT_STARTED` / `GAME_OVER` | Action outside the playing phase |
 | `BAD_MESSAGE` | Unknown opcode or unreadable JSON |
 | `CANNOT_EXTEND` | `EXTEND_TURN` twice in a turn, or without a drawn wild |
+| `DEBUG_TOOLS_OFF` | A debug op on a server without the debug tools |
 
 A well-behaved client never triggers these: it enables only playable cards, on
 its own turn. Treat an error as a client bug, log it, and send `REQUEST_STATE`.
@@ -319,15 +326,26 @@ at once.
 ```json
 { "seq": 57, "events": [
   { "type": "CARD_PLAYED", "seat": 2, "card": { "id": 5, "defId": "RED_3" }, "color": "RED" },
-  { "type": "PLAYER_FINISHED", "seat": 2, "place": 2 },
-  { "type": "PLAYER_FINISHED", "seat": 1, "place": 3 },
-  { "type": "GAME_OVER", "ranking": [0, 2, 1, 3] }
+  { "type": "GAME_OVER", "seat": 2, "ranking": [2, 0, 3, 1], "results": [
+    { "seat": 2, "place": 1, "cardsLeft": 0, "penalty": 0,  "cards": [] },
+    { "seat": 0, "place": 2, "cardsLeft": 2, "penalty": 7,  "cards": [ ... ] },
+    { "seat": 3, "place": 2, "cardsLeft": 2, "penalty": 7,  "cards": [ ... ] },
+    { "seat": 1, "place": 4, "cardsLeft": 1, "penalty": 50, "cards": [ ... ] }
+  ] }
 ] }
 ```
 
-- A player who empties their hand takes the next place and the others play on;
-  their last card's effect still applies.
-- The last player left takes last place and the match ends.
+- The first player to empty their hand wins, and the game ends at once. Their
+  last card's effect (a Draw Two, say) does not happen.
+- Everyone else is ranked by **cards left**, fewest first. Equal counts are
+  split by the **penalty** of those cards: a number card its face value,
+  Skip / Reverse / Draw Two 20, Wild and Wild Draw Four 50, lower first.
+  Players equal on both share the place (shown as "=2"); the next place is
+  skipped, as above.
+- Players see places and coins (and may see cards left). The penalty is never
+  shown: it's only the tie-break, sent so the client can check it.
+- `results` is in place order, with each seat's cards left so the results
+  screen can show them. Coins join each line with stakes (phase 3).
 - The match stays open for `postGameCloseMs` (30 s) for the results screen, then
   the server closes it. No rematch in v1.
 
