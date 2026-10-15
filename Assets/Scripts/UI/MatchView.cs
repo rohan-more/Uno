@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -105,7 +106,6 @@ public class MatchView : MonoBehaviour
         presenter.OnTurnTimedOut += CompleteStep;
         presenter.OnSeatGivenToBot += CompleteStep;
         presenter.OnPlayerConnection += HandlePlayerConnection;
-        presenter.OnPlayerFinished += HandlePlayerFinished;
         presenter.OnGameOver += HandleGameOver;
         presenter.OnError += HandleError;
         presenter.OnRemoved += HandleRemoved;
@@ -141,7 +141,6 @@ public class MatchView : MonoBehaviour
         presenter.OnTurnTimedOut -= CompleteStep;
         presenter.OnSeatGivenToBot -= CompleteStep;
         presenter.OnPlayerConnection -= HandlePlayerConnection;
-        presenter.OnPlayerFinished -= HandlePlayerFinished;
         presenter.OnGameOver -= HandleGameOver;
         presenter.OnError -= HandleError;
         presenter.OnRemoved -= HandleRemoved;
@@ -393,17 +392,33 @@ public class MatchView : MonoBehaviour
 
     private void HandlePlayerConnection(int seat, bool connected) => presenter.StepComplete();
 
-    private void HandlePlayerFinished(int seat, int place)
-    {
-        RefreshHand(seat);
-        presenter.StepComplete();
-    }
-
     private void HandleGameOver(int[] ranking)
     {
         RefreshControls();
-        Debug.Log($"Game over: {string.Join(", ", ranking)}");
+        foreach (var r in presenter.State.Results)
+            LogResult(r);
         presenter.StepComplete();
+    }
+
+    // One line per seat, with the cards and their points, recounted here so a
+    // wrong server total shows up as a warning.
+    private void LogResult(ResultMsg r)
+    {
+        var cards = new List<string>();
+        int recount = 0;
+        foreach (var card in r.cards ?? new CardMsg[0])
+        {
+            var def = database.GetById(card.defId);
+            int points = def != null ? def.Penalty : 0;
+            recount += points;
+            cards.Add($"{card.defId}={points}");
+        }
+
+        var line = $"Game over: place {r.place}, seat {r.seat}, {r.cardsLeft} cards, {r.penalty} points [{string.Join(", ", cards)}]";
+        if (recount != r.penalty || cards.Count != r.cardsLeft)
+            Debug.LogWarning($"{line}: recounted {recount} points in {cards.Count} cards");
+        else
+            Debug.Log(line);
     }
 
     private void HandleError(MatchErrorMsg error)

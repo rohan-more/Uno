@@ -38,4 +38,16 @@ public class CardDefinition
     [Header("Rules Metadata")]
     public bool IsWild;
     public int DrawAmount;             // 0, 2, 4
+
+    /// <summary>
+    /// Points against you if this is still in your hand when the game ends:
+    /// a number its face value, Skip / Reverse / Draw Two 20, wilds 50. The
+    /// server decides the real ranking; this is for showing and checking it.
+    /// </summary>
+    public int Penalty => Type switch
+    {
+        CardType.Number => Number,
+        CardType.Skip or CardType.Reverse or CardType.DrawTwo => 20,
+        _ => 50,
+    };
 }

@@ -69,7 +69,7 @@ public class MatchSeatsView : MonoBehaviour
         presenter.OnCardPlayed += _ => Refresh();
         presenter.OnCardsDrawn += HandleCardsDrawn;
         presenter.OnTurnStarted += HandleTurnStarted;
-        presenter.OnPlayerFinished += (_, __) => Refresh();
+        presenter.OnGameOver += _ => Refresh();
         presenter.OnPlayerConnection += (_, __) => Refresh();
         presenter.OnSeatGivenToBot += _ => Refresh();
     }

@@ -44,7 +44,19 @@ public class GameStateMsg
     public int turnMsLeft;
     public int startsInMs;  // only before the first turn
     public int[] ranking;
+    public ResultMsg[] results; // once the game is over
     public int seq;
+}
+
+/// <summary>One seat's line once the game is over. Results arrive in place order.</summary>
+[Serializable]
+public class ResultMsg
+{
+    public int seat;
+    public int place;      // 1 = winner; tied seats share a place
+    public int cardsLeft;
+    public int penalty;    // the hidden tie-break between equal card counts; never shown to players
+    public CardMsg[] cards; // what they were left holding
 }
 
 /// <summary>
@@ -63,10 +75,10 @@ public class MatchEventMsg
     public int direction;
     public int turnMs;
     public int pendingDraw;
-    public int place;
     public string kind;      // SEAT_CONTROL
     public bool connected;   // PLAYER_CONNECTION
-    public int[] ranking;    // GAME_OVER
+    public int[] ranking;    // GAME_OVER: seats in place order; seat is the winner
+    public ResultMsg[] results; // GAME_OVER
 }
 
 /// <summary>Opcode 102: everything one action caused, in order.</summary>
@@ -101,6 +113,13 @@ public static class RemovedReasons
     public const string Left = "LEFT";                // we sent LEAVE_MATCH
 }
 
+/// <summary>Body of DEBUG_WIN and DEBUG_ONE_CARD.</summary>
+[Serializable]
+public class DebugSeatReq
+{
+    public int seat;
+}
+
 /// <summary>Body of a PLAY_CARD message. Color is required for wild cards.</summary>
 [Serializable]
 public class PlayCardReq
@@ -120,7 +139,6 @@ public static class UnoEventTypes
     public const string TurnTimedOut = "TURN_TIMED_OUT";
     public const string SeatControl = "SEAT_CONTROL";
     public const string PlayerConnection = "PLAYER_CONNECTION";
-    public const string PlayerFinished = "PLAYER_FINISHED";
     public const string GameOver = "GAME_OVER";
     public const string TurnExtended = "TURN_EXTENDED";
 }
@@ -139,6 +157,7 @@ public static class UnoErrorCodes
     public const string GameOver = "GAME_OVER";
     public const string BadMessage = "BAD_MESSAGE";
     public const string CannotExtend = "CANNOT_EXTEND";
+    public const string DebugToolsOff = "DEBUG_TOOLS_OFF";
 }
 
 /// <summary>Seat kinds.</summary>

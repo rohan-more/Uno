@@ -49,8 +49,7 @@ public class MatchPresenter : MonoBehaviour
     public event Action<int> OnTurnTimedOut;
     public event Action<int> OnSeatGivenToBot;
     public event Action<int, bool> OnPlayerConnection;
-    public event Action<int, int> OnPlayerFinished; // seat, place
-    public event Action<int[]> OnGameOver;          // seats in finishing order
+    public event Action<int[]> OnGameOver;          // seats in place order; State.Results has the details
     public event Action<int, int> OnTurnExtended;   // seat, turnMs: their clock restarted
 
     /// <summary>The server rejected something we sent. Treat as a client bug.</summary>
@@ -310,16 +309,8 @@ public class MatchPresenter : MonoBehaviour
                     seat.Connected = e.connected;
                 break;
 
-            case UnoEventTypes.PlayerFinished:
-                if (seat != null)
-                {
-                    seat.Place = e.place;
-                    seat.CardCount = 0;
-                }
-                break;
-
             case UnoEventTypes.GameOver:
-                State.Ranking = e.ranking ?? new int[0];
+                State.ApplyResults(e.ranking, e.results);
                 break;
         }
     }
@@ -376,10 +367,6 @@ public class MatchPresenter : MonoBehaviour
 
             case UnoEventTypes.PlayerConnection:
                 OnPlayerConnection?.Invoke(e.seat, e.connected);
-                break;
-
-            case UnoEventTypes.PlayerFinished:
-                OnPlayerFinished?.Invoke(e.seat, e.place);
                 break;
 
             case UnoEventTypes.GameOver:

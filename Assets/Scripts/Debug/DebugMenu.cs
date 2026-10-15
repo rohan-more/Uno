@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -41,12 +42,25 @@ public class DebugMenu : MonoBehaviour
     [FormerlySerializedAs("resetFreeCoinsButton")]
     [SerializeField] private Button freeCoinsNowButton;
 
+    [Header("Match")]
+    [Tooltip("The players in table order (you, then clockwise). Filled in during a match.")]
+    [SerializeField] private TMP_Dropdown playerDropdown;
+    [Tooltip("The chosen player wins now; the others are ranked by their real hands.")]
+    [SerializeField] private Button instantWinButton;
+    [Tooltip("The chosen player is left holding one Wild, and wins on their next turn.")]
+    [SerializeField] private Button oneCardButton;
+
     [Header("Optional")]
     [SerializeField] private Button closeButton;
 
     private static DebugMenu instance;
 
     private static IConnectionService Connection => Services.Connection;
+
+    // The dropdown's options, as server seats, and what they were built from
+    private readonly List<int> dropdownSeats = new();
+    private string dropdownKey = "";
+    private MatchPresenter presenter;
 
     private void Awake()
     {
@@ -76,6 +90,10 @@ public class DebugMenu : MonoBehaviour
             grantCoinsButton.onClick.AddListener(GrantCoins);
         if (freeCoinsNowButton != null)
             freeCoinsNowButton.onClick.AddListener(FreeCoinsNow);
+        if (instantWinButton != null)
+            instantWinButton.onClick.AddListener(InstantWin);
+        if (oneCardButton != null)
+            oneCardButton.onClick.AddListener(DownToOneCard);
     }
 
     private void OnDisable()
@@ -90,6 +108,10 @@ public class DebugMenu : MonoBehaviour
             grantCoinsButton.onClick.RemoveListener(GrantCoins);
         if (freeCoinsNowButton != null)
             freeCoinsNowButton.onClick.RemoveListener(FreeCoinsNow);
+        if (instantWinButton != null)
+            instantWinButton.onClick.RemoveListener(InstantWin);
+        if (oneCardButton != null)
+            oneCardButton.onClick.RemoveListener(DownToOneCard);
     }
 
     private void Update()
@@ -135,6 +157,86 @@ public class DebugMenu : MonoBehaviour
             grantCoinsButton.interactable = Connection.IsConnected;
         if (freeCoinsNowButton != null)
             freeCoinsNowButton.interactable = Connection.IsConnected;
+
+        RefreshPlayers(inMatch);
+    }
+
+    // ---- match ----
+
+    /// <summary>The match being played, if this scene has one.</summary>
+    private MatchState PlayingState()
+    {
+        if (presenter == null)
+            presenter = FindObjectOfType<MatchPresenter>();
+        var state = presenter != null ? presenter.State : null;
+        return state != null && state.Seats.Length > 0 && state.HasStarted && !state.IsOver ? state : null;
+    }
+
+    private void RefreshPlayers(bool inMatch)
+    {
+        var state = inMatch && Connection.IsConnected ? PlayingState() : null;
+
+        if (instantWinButton != null)
+            instantWinButton.interactable = state != null;
+        if (oneCardButton != null)
+            oneCardButton.interactable = state != null;
+        if (playerDropdown == null)
+            return;
+        playerDropdown.interactable = state != null;
+
+        // Table order from you, clockwise, as on screen. Only rebuilt when the
+        // players change, so a choice isn't reset every frame.
+        var labels = new List<string>();
+        var seats = new List<int>();
+        if (state != null)
+        {
+            for (int offset = 0; offset < state.Seats.Length; offset++)
+            {
+                int seat = (state.YourSeat + offset) % state.Seats.Length;
+                var name = state.SeatAt(seat)?.Name ?? $"Seat {seat}";
+                labels.Add(offset == 0 ? $"You ({name})" : name);
+                seats.Add(seat);
+            }
+        }
+
+        var key = string.Join("|", labels);
+        if (key == dropdownKey)
+            return;
+        dropdownKey = key;
+        dropdownSeats.Clear();
+        dropdownSeats.AddRange(seats);
+        playerDropdown.ClearOptions();
+        playerDropdown.AddOptions(labels.Count > 0 ? labels : new List<string> { "Not in a match" });
+        playerDropdown.SetValueWithoutNotify(0);
+    }
+
+    private bool TryChosenSeat(out int seat, out string name)
+    {
+        seat = -1;
+        name = "";
+        if (playerDropdown == null || playerDropdown.value >= dropdownSeats.Count)
+            return false;
+        seat = dropdownSeats[playerDropdown.value];
+        name = playerDropdown.options[playerDropdown.value].text;
+        return true;
+    }
+
+    private void InstantWin() => SendRig(UnoOpCodes.DebugWin, "wins now");
+
+    private void DownToOneCard() => SendRig(UnoOpCodes.DebugOneCard, "is down to one Wild");
+
+    // Problems (debug tools off, game already over) come back as match errors
+    // and show in the console.
+    private async void SendRig(long opCode, string what)
+    {
+        if (!TryChosenSeat(out var seat, out var name))
+        {
+            SetText(statusText, "Pick a player first");
+            return;
+        }
+
+        await Connection.SendMatchStateAsync(opCode, JsonUtility.ToJson(new DebugSeatReq { seat = seat }));
+        SetText(statusText, $"Asked: {name} {what}");
     }
 
     private void DropConnection()

@@ -17,7 +17,7 @@ public class MatchState
         public string Name = "";
         public int Avatar;
         public int CardCount;
-        public int Place;        // 0 while playing, else finishing position
+        public int Place;        // 0 while playing, then 1 for the winner and 2-4 by cards left
         public bool Connected = true;
 
         public bool IsBot => Kind == SeatKinds.Bot;
@@ -37,6 +37,9 @@ public class MatchState
     public int PendingDraw { get; set; }
     public int DeckCount { get; set; }
     public int[] Ranking { get; set; } = new int[0];
+
+    /// <summary>Each seat's place, cards left and penalty once the game is over, in place order; empty before.</summary>
+    public ResultMsg[] Results { get; private set; } = new ResultMsg[0];
 
     /// <summary>The card you drew this turn and may still play, or -1.</summary>
     public int DrawnCardId { get; set; } = -1;
@@ -68,6 +71,7 @@ public class MatchState
         TurnMsLeft = msg.turnMsLeft;
         HasStarted = msg.startsInMs <= 0;
         Ranking = msg.ranking ?? new int[0];
+        Results = msg.results ?? new ResultMsg[0];
         Seq = msg.seq;
         ActiveColor = ParseColor(msg.activeColor);
         TopCard = ToCard(msg.topCard);
@@ -93,6 +97,22 @@ public class MatchState
                 Place = s.place,
                 Connected = s.connected,
             };
+        }
+    }
+
+    /// <summary>Records how the game ended: places, and the cards each seat was left with.</summary>
+    public void ApplyResults(int[] ranking, ResultMsg[] results)
+    {
+        Ranking = ranking ?? new int[0];
+        Results = results ?? new ResultMsg[0];
+        foreach (var r in Results)
+        {
+            var seat = SeatAt(r.seat);
+            if (seat != null)
+            {
+                seat.Place = r.place;
+                seat.CardCount = r.cardsLeft;
+            }
         }
     }
 

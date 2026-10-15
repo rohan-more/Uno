@@ -12,6 +12,10 @@ public static class UnoOpCodes
     public const long LeaveMatch = 7;    // {} quit now: a bot takes the seat
     public const long ExtendTurn = 6;    // {} once a turn, before choosing a drawn wild's colour
 
+    // client -> server, testing only: refused unless the server's debug tools are on
+    public const long DebugWin = 90;     // {"seat":2} that seat wins now
+    public const long DebugOneCard = 91; // {"seat":2} that seat is left holding one Wild
+
     // server -> client
     public const long LobbyState = 100;  // seats + countdown
     public const long GameState = 101;   // full personalized snapshot
