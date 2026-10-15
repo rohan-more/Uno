@@ -56,25 +56,39 @@ func rpcCurrentMatch(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 		return "{}", nil
 	}
 
+	record, ok := readCurrentMatch(ctx, logger, nk, userID)
+	if !ok {
+		return "{}", nil
+	}
+	reply, err := json.Marshal(record)
+	if err != nil {
+		return "{}", nil
+	}
+	return string(reply), nil
+}
+
+// readCurrentMatch returns the match this player holds a seat in, with its
+// phase, or false. A record for a match that has since ended is cleared.
+func readCurrentMatch(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID string) (currentMatchRecord, bool) {
 	objects, err := nk.StorageRead(ctx, []*runtime.StorageRead{{
 		Collection: matchCollection,
 		Key:        matchKey,
 		UserID:     userID,
 	}})
 	if err != nil || len(objects) == 0 {
-		return "{}", nil
+		return currentMatchRecord{}, false
 	}
 
 	var record currentMatchRecord
 	if err := json.Unmarshal([]byte(objects[0].Value), &record); err != nil || record.MatchID == "" {
-		return "{}", nil
+		return currentMatchRecord{}, false
 	}
 
 	// The match may have ended while the client was away.
 	match, err := nk.MatchGet(ctx, record.MatchID)
 	if err != nil || match == nil {
 		clearCurrentMatch(ctx, logger, nk, userID)
-		return "{}", nil
+		return currentMatchRecord{}, false
 	}
 
 	var label struct {
@@ -82,12 +96,13 @@ func rpcCurrentMatch(ctx context.Context, logger runtime.Logger, db *sql.DB, nk 
 	}
 	_ = json.Unmarshal([]byte(match.GetLabel().GetValue()), &label)
 	record.Phase = label.Phase
+	return record, true
+}
 
-	reply, err := json.Marshal(record)
-	if err != nil {
-		return "{}", nil
-	}
-	return string(reply), nil
+// matchInProgress reports whether this player is seated in a match being played.
+func matchInProgress(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID string) bool {
+	record, ok := readCurrentMatch(ctx, logger, nk, userID)
+	return ok && record.Phase == phasePlaying
 }
 
 // rpcQuickMatch makes a private match that starts at once, with bots in the

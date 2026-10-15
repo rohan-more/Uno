@@ -83,32 +83,124 @@ func TestStarterCoins_RacingLoginsGrantOnce(t *testing.T) {
 	}
 }
 
-func TestFreeCoins_CooldownBetweenClaims(t *testing.T) {
+func TestFreeCoins_NothingWithEnoughToPlay(t *testing.T) {
 	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+	w.coins["u"] = int64(cfg.FreeCoinsBelow) // exactly one stake: can still play
+
+	info, err := settleFreeCoins(ctx, w, cfg, "u", 1_000, false)
+	if err != nil || info.FreeCoinsWaiting || info.FreeCoinsAdded != 0 {
+		t.Fatalf("with enough to play nothing should happen: %+v, %v", info, err)
+	}
+
+	// Days later, still nothing: time with enough coins is never saved up.
+	info, _ = settleFreeCoins(ctx, w, cfg, "u", 1_000+10*cfg.FreeCoinsEveryMillis(), false)
+	if info.Coins != int64(cfg.FreeCoinsBelow) || len(w.ledger) != 0 {
+		t.Errorf("coins = %d, ledger %v; want no free coins", info.Coins, w.ledger)
+	}
+}
+
+func TestFreeCoins_TopUpAfterTheWait(t *testing.T) {
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+	w.coins["u"] = 30
 	start := int64(1_000_000_000)
 
-	info, err := claimFreeCoins(ctx, w, cfg, "u", start)
-	if err != nil || !info.Claimed || info.Coins != int64(cfg.FreeCoins) {
-		t.Fatalf("first claim: %+v, %v", info, err)
-	}
-	if info.FreeCoinsInMs != cfg.FreeCoinsEveryMillis() {
-		t.Errorf("after claiming, next in %d ms, want %d", info.FreeCoinsInMs, cfg.FreeCoinsEveryMillis())
+	// Seen below the line: the wait starts.
+	info, err := settleFreeCoins(ctx, w, cfg, "u", start, false)
+	if err != nil || !info.FreeCoinsWaiting || info.FreeCoinsInMs != cfg.FreeCoinsEveryMillis() {
+		t.Fatalf("wait should start: %+v, %v", info, err)
 	}
 
-	// A minute later: refused, coins unchanged, and it says how long to wait.
-	info, err = claimFreeCoins(ctx, w, cfg, "u", start+60_000)
-	if err != nil || info.Claimed || info.Coins != int64(cfg.FreeCoins) {
-		t.Fatalf("early claim should be refused: %+v, %v", info, err)
-	}
-	if want := cfg.FreeCoinsEveryMillis() - 60_000; info.FreeCoinsInMs != want {
-		t.Errorf("early claim: next in %d ms, want %d", info.FreeCoinsInMs, want)
+	// An hour in: still waiting, nothing added.
+	info, _ = settleFreeCoins(ctx, w, cfg, "u", start+3_600_000, false)
+	if want := cfg.FreeCoinsEveryMillis() - 3_600_000; info.FreeCoinsInMs != want || info.Coins != 30 {
+		t.Fatalf("an hour in: %+v, want %d ms left and 30 coins", info, want)
 	}
 
-	// Once the cooldown is over it works again.
-	info, err = claimFreeCoins(ctx, w, cfg, "u", start+cfg.FreeCoinsEveryMillis())
-	if err != nil || !info.Claimed || info.Coins != 2*int64(cfg.FreeCoins) {
-		t.Fatalf("claim after the cooldown: %+v, %v", info, err)
+	// Due: topped up to exactly freeCoinsUpTo, once.
+	info, _ = settleFreeCoins(ctx, w, cfg, "u", start+cfg.FreeCoinsEveryMillis(), false)
+	if info.Coins != int64(cfg.FreeCoinsUpTo) || info.FreeCoinsAdded != int64(cfg.FreeCoinsUpTo)-30 || info.FreeCoinsWaiting {
+		t.Fatalf("top-up: %+v, want %d coins", info, cfg.FreeCoinsUpTo)
 	}
+	info, _ = settleFreeCoins(ctx, w, cfg, "u", start+cfg.FreeCoinsEveryMillis()+1, false)
+	if info.FreeCoinsAdded != 0 || len(w.ledger) != 1 || w.ledger[0] != CoinsFree {
+		t.Errorf("the top-up must happen once, ledger %v", w.ledger)
+	}
+}
+
+func TestFreeCoins_LongAbsenceStillOnlyTopsUpToTheLine(t *testing.T) {
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+
+	settleFreeCoins(ctx, w, cfg, "u", 1, false) // broke at 0, wait starts
+	info, _ := settleFreeCoins(ctx, w, cfg, "u", 1+20*cfg.FreeCoinsEveryMillis(), false)
+	if info.Coins != int64(cfg.FreeCoinsUpTo) {
+		t.Errorf("after a long absence coins = %d, want %d", info.Coins, cfg.FreeCoinsUpTo)
+	}
+}
+
+func TestFreeCoins_GettingBackAboveTheLineCancelsTheWait(t *testing.T) {
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+	w.coins["u"] = 10
+	start := int64(1_000_000)
+
+	settleFreeCoins(ctx, w, cfg, "u", start, false) // wait starts
+	w.coins["u"] = 200                              // e.g. won, or bought
+	settleFreeCoins(ctx, w, cfg, "u", start+1, false)
+
+	// Broke again much later: a fresh wait, not one that's already due.
+	w.coins["u"] = 10
+	info, _ := settleFreeCoins(ctx, w, cfg, "u", start+2*cfg.FreeCoinsEveryMillis(), false)
+	if info.FreeCoinsAdded != 0 || info.FreeCoinsInMs != cfg.FreeCoinsEveryMillis() {
+		t.Errorf("the old wait should have been cancelled: %+v", info)
+	}
+}
+
+func TestFreeCoins_NothingChangesDuringAMatch(t *testing.T) {
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+	w.coins["u"] = 10 // e.g. the stake is held
+
+	info, _ := settleFreeCoins(ctx, w, cfg, "u", 1_000, true)
+	if info.FreeCoinsWaiting || w.state["u"].FreeCoinsClockMs != 0 {
+		t.Errorf("a match must not start the wait: %+v", info)
+	}
+
+	settleFreeCoins(ctx, w, cfg, "u", 1_000, false) // home: wait starts
+	info, _ = settleFreeCoins(ctx, w, cfg, "u", 1_000+cfg.FreeCoinsEveryMillis(), true)
+	if info.FreeCoinsAdded != 0 || info.Coins != 10 {
+		t.Errorf("a due top-up must wait for the match to end: %+v", info)
+	}
+}
+
+func TestFreeCoins_RacingReadsTopUpOnce(t *testing.T) {
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+	settleFreeCoins(ctx, w, cfg, "u", 1, false) // broke at 0, wait starts
+
+	// Another read stops the clock between this one's read and write.
+	racing := &racingWallet{fakeWallet: w, beforeWrite: func() {
+		state, version, _ := w.ReadState(ctx, "u")
+		state.FreeCoinsClockMs = 0
+		w.WriteState(ctx, "u", state, version)
+		w.Add(ctx, "u", int64(cfg.FreeCoinsUpTo), CoinsFree)
+	}}
+	info, err := settleFreeCoins(ctx, racing, cfg, "u", 1+cfg.FreeCoinsEveryMillis(), false)
+	if err != nil || info.FreeCoinsAdded != 0 || w.coins["u"] != int64(cfg.FreeCoinsUpTo) {
+		t.Errorf("only one top-up should land: %+v, coins %d, %v", info, w.coins["u"], err)
+	}
+}
+
+// racingWallet runs beforeWrite once, just before the first state write, to
+// stand in for another request getting there first.
+type racingWallet struct {
+	*fakeWallet
+	beforeWrite func()
+}
+
+func (r *racingWallet) WriteState(ctx context.Context, userID string, state walletState, version string) error {
+	if r.beforeWrite != nil {
+		race := r.beforeWrite
+		r.beforeWrite = nil
+		race()
+	}
+	return r.fakeWallet.WriteState(ctx, userID, state, version)
 }
 
 func TestDebugTools_OffUnlessTheServerSaysSo(t *testing.T) {
@@ -129,7 +221,7 @@ func TestDebugTools_OffUnlessTheServerSaysSo(t *testing.T) {
 func TestDebugGrant_AmountIsBounded(t *testing.T) {
 	w, ctx := newFakeWallet(), context.Background()
 
-	for _, bad := range []int64{0, -5, maxDebugGrant + 1} {
+	for _, bad := range []int64{0, -maxDebugGrant - 1, maxDebugGrant + 1} {
 		if err := debugGrantCoins(ctx, w, "u", bad); !errors.Is(err, errBadDebugAmount) {
 			t.Errorf("amount %d: err = %v, want errBadDebugAmount", bad, err)
 		}
@@ -142,18 +234,28 @@ func TestDebugGrant_AmountIsBounded(t *testing.T) {
 	}
 }
 
-func TestDebugResetFreeCoins_MakesThemClaimable(t *testing.T) {
-	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
-	now := int64(5_000_000)
+func TestDebugGrant_TakingAwayStopsAtZero(t *testing.T) {
+	w, ctx := newFakeWallet(), context.Background()
+	w.coins["u"] = 120
 
-	if _, err := claimFreeCoins(ctx, w, cfg, "u", now); err != nil {
-		t.Fatal(err)
+	if err := debugGrantCoins(ctx, w, "u", -500); err != nil || w.coins["u"] != 0 {
+		t.Errorf("take 500 of 120: coins=%d err=%v, want 0", w.coins["u"], err)
 	}
-	if err := debugResetFreeCoins(ctx, w, "u"); err != nil {
-		t.Fatal(err)
+}
+
+func TestDebugFreeCoinsNow_TopsUpOnlyWhenBelowTheLine(t *testing.T) {
+	w, cfg, ctx := newFakeWallet(), DefaultEconomyConfig(), context.Background()
+	now := int64(1_790_000_000_000) // a real unix-ms time
+
+	w.coins["u"] = 300
+	info, err := debugFreeCoinsNow(ctx, w, cfg, "u", now)
+	if err != nil || info.FreeCoinsAdded != 0 || w.coins["u"] != 300 {
+		t.Errorf("with enough coins nothing should happen: %+v, %v", info, err)
 	}
-	info, err := claimFreeCoins(ctx, w, cfg, "u", now+1)
-	if err != nil || !info.Claimed {
-		t.Errorf("after a reset, free coins should be claimable at once: %+v, %v", info, err)
+
+	w.coins["u"] = 20
+	info, err = debugFreeCoinsNow(ctx, w, cfg, "u", now)
+	if err != nil || w.coins["u"] != int64(cfg.FreeCoinsUpTo) || info.FreeCoinsAdded != int64(cfg.FreeCoinsUpTo)-20 {
+		t.Errorf("below the line it should top up at once: %+v, coins %d, %v", info, w.coins["u"], err)
 	}
 }

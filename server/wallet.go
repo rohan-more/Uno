@@ -13,7 +13,7 @@ import (
 
 // Coins live in each account's Nakama wallet, which only the server can change
 // and which keeps a ledger of every change. Alongside it, a small server-owned
-// storage record remembers one-off grants and the free-coins clock.
+// storage record remembers one-off grants and the free-coins wait.
 const (
 	walletCurrency   = "coins"
 	walletCollection = "wallet"
@@ -38,8 +38,11 @@ var errAlreadyChanged = errors.New("wallet state changed by another request")
 
 // walletState is the per-player record next to the wallet.
 type walletState struct {
-	StarterGranted  bool  `json:"starterGranted"`
-	LastFreeClaimMs int64 `json:"lastFreeClaimMs"` // unix ms; 0 means never
+	StarterGranted bool `json:"starterGranted"`
+	// FreeCoinsClockMs is when the wait for free coins began (unix ms): the
+	// first time the balance was seen below freeCoinsBelow. 0 while it isn't
+	// running, so time spent with enough coins is never saved up.
+	FreeCoinsClockMs int64 `json:"freeCoinsClockMs"`
 }
 
 // walletStore is what the coin rules need from Nakama, so tests can use a fake.
@@ -56,10 +59,15 @@ type walletStore interface {
 
 // WalletInfo is what the wallet RPCs return.
 type WalletInfo struct {
-	Coins         int64 `json:"coins"`
-	FreeCoins     int   `json:"freeCoins"`     // how many a claim gives
-	FreeCoinsInMs int64 `json:"freeCoinsInMs"` // 0 when claimable now
-	Claimed       bool  `json:"claimed,omitempty"`
+	Coins int64 `json:"coins"`
+	// FreeCoinsAdded is what this very call topped up, so the client can say so.
+	FreeCoinsAdded int64 `json:"freeCoinsAdded"`
+	// FreeCoinsWaiting is true while the balance is below freeCoinsBelow and a
+	// top-up is on its way; FreeCoinsInMs is how long until it's due.
+	FreeCoinsWaiting bool  `json:"freeCoinsWaiting"`
+	FreeCoinsInMs    int64 `json:"freeCoinsInMs"`
+	FreeCoinsBelow   int   `json:"freeCoinsBelow"`
+	FreeCoinsUpTo    int   `json:"freeCoinsUpTo"`
 }
 
 // grantStarterCoins gives an account its starting coins, once ever. It runs on
@@ -87,60 +95,82 @@ func grantStarterCoins(ctx context.Context, store walletStore, cfg EconomyConfig
 	return true, nil
 }
 
-// walletInfo reads the balance and when free coins can next be claimed.
-func walletInfo(ctx context.Context, store walletStore, cfg EconomyConfig, userID string, nowMs int64) (WalletInfo, error) {
+// settleFreeCoins reads the wallet and applies the free-coins rule on the way:
+//
+//   - With freeCoinsBelow or more, nothing happens, and any wait is cancelled.
+//   - Below it, a wait starts; once it has lasted freeCoinsEveryMinutes, the
+//     balance is topped up to exactly freeCoinsUpTo.
+//   - While inMatch nothing changes: a held stake makes the balance look low.
+//
+// Free coins are a way back into the game when you can't afford one, never a
+// refill of what you lost: anything above freeCoinsUpTo is only won.
+func settleFreeCoins(ctx context.Context, store walletStore, cfg EconomyConfig, userID string, nowMs int64, inMatch bool) (WalletInfo, error) {
 	coins, err := store.Balance(ctx, userID)
 	if err != nil {
 		return WalletInfo{}, err
 	}
-	state, _, err := store.ReadState(ctx, userID)
-	if err != nil {
-		return WalletInfo{}, err
-	}
-	return WalletInfo{
-		Coins:         coins,
-		FreeCoins:     cfg.FreeCoins,
-		FreeCoinsInMs: freeCoinsInMs(state, cfg, nowMs),
-	}, nil
-}
-
-func freeCoinsInMs(state walletState, cfg EconomyConfig, nowMs int64) int64 {
-	if state.LastFreeClaimMs == 0 {
-		return 0
-	}
-	left := state.LastFreeClaimMs + cfg.FreeCoinsEveryMillis() - nowMs
-	if left < 0 {
-		return 0
-	}
-	return left
-}
-
-// claimFreeCoins grants the free coins if the cooldown has passed. Not being
-// ready isn't an error: Claimed is false and FreeCoinsInMs says how long.
-func claimFreeCoins(ctx context.Context, store walletStore, cfg EconomyConfig, userID string, nowMs int64) (WalletInfo, error) {
 	state, version, err := store.ReadState(ctx, userID)
 	if err != nil {
 		return WalletInfo{}, err
 	}
-	if freeCoinsInMs(state, cfg, nowMs) > 0 {
-		return walletInfo(ctx, store, cfg, userID, nowMs)
-	}
 
-	// Claim the slot first, so a double tap can't claim twice.
-	state.LastFreeClaimMs = nowMs
-	if err := store.WriteState(ctx, userID, state, version); err != nil {
-		if errors.Is(err, errAlreadyChanged) {
-			return walletInfo(ctx, store, cfg, userID, nowMs)
+	info := WalletInfo{Coins: coins, FreeCoinsBelow: cfg.FreeCoinsBelow, FreeCoinsUpTo: cfg.FreeCoinsUpTo}
+	below := coins < int64(cfg.FreeCoinsBelow)
+	dueAt := state.FreeCoinsClockMs + cfg.FreeCoinsEveryMillis()
+
+	switch {
+	case inMatch:
+		if below && state.FreeCoinsClockMs != 0 {
+			info.FreeCoinsWaiting = true
+			info.FreeCoinsInMs = max(0, dueAt-nowMs)
 		}
-		return WalletInfo{}, err
-	}
-	if _, err := store.Add(ctx, userID, int64(cfg.FreeCoins), CoinsFree); err != nil {
-		return WalletInfo{}, err
+		return info, nil
+
+	case !below:
+		if state.FreeCoinsClockMs != 0 {
+			state.FreeCoinsClockMs = 0
+			if err := store.WriteState(ctx, userID, state, version); err != nil && !errors.Is(err, errAlreadyChanged) {
+				return WalletInfo{}, err
+			}
+		}
+		return info, nil
+
+	case state.FreeCoinsClockMs == 0:
+		// Just dropped below: start the wait. Losing a race means another
+		// request started it a moment ago, which is just as good.
+		state.FreeCoinsClockMs = nowMs
+		if err := store.WriteState(ctx, userID, state, version); err != nil && !errors.Is(err, errAlreadyChanged) {
+			return WalletInfo{}, err
+		}
+		info.FreeCoinsWaiting = true
+		info.FreeCoinsInMs = cfg.FreeCoinsEveryMillis()
+		return info, nil
+
+	case nowMs < dueAt:
+		info.FreeCoinsWaiting = true
+		info.FreeCoinsInMs = dueAt - nowMs
+		return info, nil
 	}
 
-	info, err := walletInfo(ctx, store, cfg, userID, nowMs)
-	info.Claimed = err == nil
-	return info, err
+	// Due. Stop the clock first, against its version, so two reads at once
+	// can't both top up; the loser just reports what the winner added.
+	state.FreeCoinsClockMs = 0
+	if err := store.WriteState(ctx, userID, state, version); err != nil {
+		if !errors.Is(err, errAlreadyChanged) {
+			return WalletInfo{}, err
+		}
+		if info.Coins, err = store.Balance(ctx, userID); err != nil {
+			return WalletInfo{}, err
+		}
+		return info, nil
+	}
+
+	topUp := int64(cfg.FreeCoinsUpTo) - coins
+	if info.Coins, err = store.Add(ctx, userID, topUp, CoinsFree); err != nil {
+		return WalletInfo{}, err
+	}
+	info.FreeCoinsAdded = topUp
+	return info, nil
 }
 
 // debugToolsOn reports whether the debug RPCs are allowed on this server.
@@ -149,26 +179,47 @@ func debugToolsOn(ctx context.Context) bool {
 	return env[debugToolsEnv] == "true"
 }
 
-// debugGrantCoins adds coins for testing. The amount is capped so a typo can't
-// wreck an account.
+// debugGrantCoins adds coins for testing, or takes them away with a negative
+// amount (never below 0), e.g. to go broke and try free coins. The amount is
+// capped so a typo can't wreck an account.
 func debugGrantCoins(ctx context.Context, store walletStore, userID string, amount int64) error {
-	if amount < 1 || amount > maxDebugGrant {
+	if amount == 0 || amount < -maxDebugGrant || amount > maxDebugGrant {
 		return errBadDebugAmount
+	}
+	if amount < 0 {
+		coins, err := store.Balance(ctx, userID)
+		if err != nil {
+			return err
+		}
+		amount = max(amount, -coins)
+		if amount == 0 {
+			return nil // already at 0
+		}
 	}
 	_, err := store.Add(ctx, userID, amount, CoinsDebug)
 	return err
 }
 
-var errBadDebugAmount = errors.New("amount must be between 1 and 100000")
+var errBadDebugAmount = errors.New("amount must be between -100000 and 100000, and not 0")
 
-// debugResetFreeCoins makes free coins claimable right away.
-func debugResetFreeCoins(ctx context.Context, store walletStore, userID string) error {
-	state, version, err := store.ReadState(ctx, userID)
+// debugFreeCoinsNow makes a waiting top-up due at once and applies it. With
+// enough coins there is nothing to top up, and nothing happens.
+func debugFreeCoinsNow(ctx context.Context, store walletStore, cfg EconomyConfig, userID string, nowMs int64) (WalletInfo, error) {
+	coins, err := store.Balance(ctx, userID)
 	if err != nil {
-		return err
+		return WalletInfo{}, err
 	}
-	state.LastFreeClaimMs = 0
-	return store.WriteState(ctx, userID, state, version)
+	if coins < int64(cfg.FreeCoinsBelow) {
+		state, version, err := store.ReadState(ctx, userID)
+		if err != nil {
+			return WalletInfo{}, err
+		}
+		state.FreeCoinsClockMs = max(1, nowMs-cfg.FreeCoinsEveryMillis()) // 0 would mean "not waiting"
+		if err := store.WriteState(ctx, userID, state, version); err != nil {
+			return WalletInfo{}, err
+		}
+	}
+	return settleFreeCoins(ctx, store, cfg, userID, nowMs, false)
 }
 
 // ---------- Nakama-backed store ----------
@@ -266,35 +317,13 @@ func containsAny(s string, parts ...string) bool {
 
 // ---------- RPCs ----------
 
+// rpcGetWallet returns the balance, topping it up first if free coins are due.
 func rpcGetWallet(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
 	userID, err := callerID(ctx)
 	if err != nil {
 		return "", err
 	}
-	cfg := LoadEconomyConfig(ctx, logger, nk)
-	info, err := walletInfo(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
-	if err != nil {
-		logger.WithField("error", err.Error()).Error("get wallet")
-		return "", runtime.NewError("could not read the wallet", 13)
-	}
-	return marshalInfo(info)
-}
-
-func rpcClaimFreeCoins(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
-	userID, err := callerID(ctx)
-	if err != nil {
-		return "", err
-	}
-	cfg := LoadEconomyConfig(ctx, logger, nk)
-	info, err := claimFreeCoins(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
-	if err != nil {
-		logger.WithField("error", err.Error()).Error("claim free coins")
-		return "", runtime.NewError("could not claim free coins", 13)
-	}
-	if info.Claimed {
-		logger.WithField("user_id", userID).WithField("coins", info.Coins).Info("free coins claimed")
-	}
-	return marshalInfo(info)
+	return walletReply(ctx, logger, nk, userID)
 }
 
 func rpcDebugGrantCoins(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
@@ -319,25 +348,38 @@ func rpcDebugGrantCoins(ctx context.Context, logger runtime.Logger, db *sql.DB, 
 	return walletReply(ctx, logger, nk, userID)
 }
 
-func rpcDebugResetFreeCoins(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
+func rpcDebugFreeCoinsNow(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runtime.NakamaModule, payload string) (string, error) {
 	userID, err := debugCaller(ctx)
 	if err != nil {
 		return "", err
 	}
-	if err := debugResetFreeCoins(ctx, nakamaWallet{nk}, userID); err != nil {
-		logger.WithField("error", err.Error()).Error("debug reset free coins")
-		return "", runtime.NewError("could not reset free coins", 13)
+	cfg := LoadEconomyConfig(ctx, logger, nk)
+	info, err := debugFreeCoinsNow(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
+	if err != nil {
+		logger.WithField("error", err.Error()).Error("debug free coins now")
+		return "", runtime.NewError("could not top up", 13)
 	}
-	return walletReply(ctx, logger, nk, userID)
+	logFreeCoins(logger, userID, info)
+	return marshalInfo(info)
 }
 
+// walletReply settles free coins and returns the wallet, as every wallet RPC replies.
 func walletReply(ctx context.Context, logger runtime.Logger, nk runtime.NakamaModule, userID string) (string, error) {
 	cfg := LoadEconomyConfig(ctx, logger, nk)
-	info, err := walletInfo(ctx, nakamaWallet{nk}, cfg, userID, nowMs())
+	inMatch := matchInProgress(ctx, logger, nk, userID)
+	info, err := settleFreeCoins(ctx, nakamaWallet{nk}, cfg, userID, nowMs(), inMatch)
 	if err != nil {
+		logger.WithField("error", err.Error()).Error("read wallet")
 		return "", runtime.NewError("could not read the wallet", 13)
 	}
+	logFreeCoins(logger, userID, info)
 	return marshalInfo(info)
+}
+
+func logFreeCoins(logger runtime.Logger, userID string, info WalletInfo) {
+	if info.FreeCoinsAdded > 0 {
+		logger.WithField("user_id", userID).WithField("added", info.FreeCoinsAdded).Info("free coins topped up")
+	}
 }
 
 func callerID(ctx context.Context) (string, error) {

@@ -5,36 +5,47 @@ using UnityEngine;
 /// <summary>This player's coins, by way of Services.Wallet.</summary>
 public interface IWalletService
 {
-    /// <summary>Raised whenever the balance or the free-coins timer changes.</summary>
+    /// <summary>Raised whenever the balance or the free-coins wait changes.</summary>
     event Action OnChanged;
+
+    /// <summary>Raised after OnChanged when the server just topped up free coins, with how many.</summary>
+    event Action<long> OnFreeCoinsAdded;
 
     /// <summary>False until the server has answered once.</summary>
     bool Loaded { get; }
 
     long Coins { get; }
 
-    /// <summary>How many coins a free claim gives.</summary>
-    int FreeCoins { get; }
+    /// <summary>Below the line, with a free top-up on its way.</summary>
+    bool FreeCoinsWaiting { get; }
 
-    bool FreeCoinsReady { get; }
+    /// <summary>How long until that top-up is due; zero once it is.</summary>
     TimeSpan FreeCoinsIn { get; }
 
+    /// <summary>Free coins start below this balance...</summary>
+    int FreeCoinsBelow { get; }
+
+    /// <summary>...and top it up to this.</summary>
+    int FreeCoinsUpTo { get; }
+
+    /// <summary>Reads the balance. The server tops up free coins first if they're due.</summary>
     Task<bool> RefreshAsync();
 
-    /// <summary>Claims free coins. False if they weren't ready yet (the timer is updated either way).</summary>
-    Task<bool> ClaimFreeCoinsAsync();
-
-    /// <summary>Testing: adds coins. Refused unless the server's debug tools are on.</summary>
+    /// <summary>Testing: adds coins, or takes them with a negative amount. Refused unless the server's debug tools are on.</summary>
     Task<bool> DebugGrantAsync(int amount);
 
-    /// <summary>Testing: makes free coins claimable now.</summary>
-    Task<bool> DebugResetFreeCoinsAsync();
+    /// <summary>Testing: if below the line, tops up free coins now.</summary>
+    Task<bool> DebugFreeCoinsNowAsync();
 }
 
 /// <summary>
 /// This player's coins, as the server last reported them. The server owns the
 /// real balance: every method here asks it and then shows what it says, so the
 /// client can never change coins by itself.
+///
+/// Free coins are added by the server whenever the wallet is read and they're
+/// due; there is nothing to claim. A view showing the wait should refresh once
+/// FreeCoinsIn reaches zero.
 ///
 /// Registered as Services.Wallet by NakamaConnection. The loading screen
 /// fetches it first; it refreshes itself after a reconnect. Subscribe to
@@ -44,9 +55,9 @@ public class Wallet : IWalletService
 {
     private readonly IConnectionService connection;
 
-    // When free coins become claimable, on Unity's clock. Set from the server's
+    // When the free top-up is due, on Unity's clock. Set from the server's
     // "in N ms", so the client never compares its clock with the server's.
-    private float freeCoinsReadyAt;
+    private float freeCoinsDueAt;
 
     public Wallet(IConnectionService connection)
     {
@@ -56,73 +67,71 @@ public class Wallet : IWalletService
         connection.OnReconnected += () => _ = RefreshAsync();
     }
 
-    /// <summary>Raised whenever the balance or the free-coins timer changes.</summary>
     public event Action OnChanged;
+    public event Action<long> OnFreeCoinsAdded;
 
-    /// <summary>False until the server has answered once.</summary>
     public bool Loaded { get; private set; }
 
     public long Coins { get; private set; }
 
-    /// <summary>How many coins a free claim gives.</summary>
-    public int FreeCoins { get; private set; }
+    public bool FreeCoinsWaiting { get; private set; }
 
-    public bool FreeCoinsReady => Loaded && Time.realtimeSinceStartup >= freeCoinsReadyAt;
+    public TimeSpan FreeCoinsIn => FreeCoinsWaiting
+        ? TimeSpan.FromSeconds(Mathf.Max(0f, freeCoinsDueAt - Time.realtimeSinceStartup))
+        : TimeSpan.Zero;
 
-    public TimeSpan FreeCoinsIn => TimeSpan.FromSeconds(Mathf.Max(0f, freeCoinsReadyAt - Time.realtimeSinceStartup));
+    public int FreeCoinsBelow { get; private set; }
+
+    public int FreeCoinsUpTo { get; private set; }
 
     public Task<bool> RefreshAsync() => CallAsync("get_wallet");
 
-    /// <summary>Claims free coins. False if they weren't ready yet (the timer is updated either way).</summary>
-    public async Task<bool> ClaimFreeCoinsAsync()
-    {
-        var info = await CallInfoAsync("claim_free_coins");
-        return info != null && info.claimed;
-    }
-
-    /// <summary>Testing: adds coins. Refused unless the server's debug tools are on.</summary>
     public Task<bool> DebugGrantAsync(int amount) =>
         CallAsync("debug_grant_coins", JsonUtility.ToJson(new GrantRequest { amount = amount }));
 
-    /// <summary>Testing: makes free coins claimable now.</summary>
-    public Task<bool> DebugResetFreeCoinsAsync() => CallAsync("debug_reset_free_coins");
+    public Task<bool> DebugFreeCoinsNowAsync() => CallAsync("debug_free_coins_now");
 
-    private async Task<bool> CallAsync(string rpc, string payload = "{}") =>
-        await CallInfoAsync(rpc, payload) != null;
-
-    private async Task<WalletResponse> CallInfoAsync(string rpc, string payload = "{}")
+    private async Task<bool> CallAsync(string rpc, string payload = "{}")
     {
         try
         {
             var response = await connection.RpcAsync(rpc, payload);
             var info = JsonUtility.FromJson<WalletResponse>(response.Payload);
-            if (info != null)
-                Apply(info);
-            return info;
+            if (info == null)
+                return false;
+            Apply(info);
+            return true;
         }
         catch (Exception e)
         {
             Debug.LogWarning($"{rpc} failed: {e.Message}");
-            return null;
+            return false;
         }
     }
 
     private void Apply(WalletResponse info)
     {
         Coins = info.coins;
-        FreeCoins = info.freeCoins;
-        freeCoinsReadyAt = Time.realtimeSinceStartup + info.freeCoinsInMs / 1000f;
+        FreeCoinsWaiting = info.freeCoinsWaiting;
+        freeCoinsDueAt = Time.realtimeSinceStartup + info.freeCoinsInMs / 1000f;
+        FreeCoinsBelow = info.freeCoinsBelow;
+        FreeCoinsUpTo = info.freeCoinsUpTo;
         Loaded = true;
+
         OnChanged?.Invoke();
+        if (info.freeCoinsAdded > 0)
+            OnFreeCoinsAdded?.Invoke(info.freeCoinsAdded);
     }
 
     [Serializable]
     private class WalletResponse
     {
         public long coins;
-        public int freeCoins;
+        public long freeCoinsAdded;
+        public bool freeCoinsWaiting;
         public long freeCoinsInMs;
-        public bool claimed;
+        public int freeCoinsBelow;
+        public int freeCoinsUpTo;
     }
 
     [Serializable]

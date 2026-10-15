@@ -339,23 +339,31 @@ changes it, and every change is in the wallet ledger with a `reason`:
 
 - **Starting coins:** every account gets `startingCoins` once, at login. Accounts
   made before coins existed get them at their next login.
-- **Free coins:** `freeCoins` every `freeCoinsEveryMinutes`, for anyone.
+- **Free coins** rescue players who can't afford a match, and are added
+  automatically. Once the balance is below `freeCoinsBelow`, a wait of
+  `freeCoinsEveryMinutes` starts; when it's over, the next wallet read tops the
+  balance up to exactly `freeCoinsUpTo`. Getting back to `freeCoinsBelow` or more
+  cancels the wait, so time with enough coins is never saved up. Nothing changes
+  while the player is seated in a match being played.
 
 All wallet RPCs reply with the same shape:
 
 ```json
-{ "coins": 600, "freeCoins": 100, "freeCoinsInMs": 0, "claimed": true }
+{ "coins": 100, "freeCoinsAdded": 70, "freeCoinsWaiting": false,
+  "freeCoinsInMs": 0, "freeCoinsBelow": 50, "freeCoinsUpTo": 100 }
 ```
 
-`freeCoinsInMs` is how long until free coins can be claimed (0 = now), so the
-client never compares clocks with the server.
+- `freeCoinsAdded`: coins this very call topped up (0 almost always), so the
+  client can announce them.
+- `freeCoinsWaiting`: below the line, with a top-up on its way.
+  `freeCoinsInMs` is how long until it's due, so the client never compares
+  clocks with the server. When it reaches 0, read the wallet again.
 
 | RPC | Body | Does |
 |---|---|---|
-| `get_wallet` | `{}` | Balance and free-coins wait |
-| `claim_free_coins` | `{}` | Grants free coins if ready; `claimed` says whether it did |
-| `debug_grant_coins` | `{ "amount": 500 }` | Adds 1-100000 coins. **Debug only** |
-| `debug_reset_free_coins` | `{}` | Makes free coins claimable now. **Debug only** |
+| `get_wallet` | `{}` | Balance, after topping up free coins if they're due |
+| `debug_grant_coins` | `{ "amount": 500 }` | Adds coins, or takes them with a negative amount (not below 0). -100000 to 100000. **Debug only** |
+| `debug_free_coins_now` | `{}` | If below the line, tops up now. **Debug only** |
 
 Debug RPCs answer `PERMISSION_DENIED` unless the server runs with
 `UNO_DEBUG_TOOLS=true` in its runtime env, which only `local.yml` sets.

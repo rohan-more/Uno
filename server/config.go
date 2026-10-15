@@ -190,21 +190,26 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 
 // EconomyConfig holds the coin settings. Stake and payouts join in phase 3.
 type EconomyConfig struct {
-	StartingCoins         int `json:"startingCoins"`         // given once to every account
-	FreeCoins             int `json:"freeCoins"`             // what a free-coins claim gives
-	FreeCoinsEveryMinutes int `json:"freeCoinsEveryMinutes"` // how often free coins can be claimed
+	StartingCoins int `json:"startingCoins"` // given once to every account
+
+	// Free coins rescue players who can't afford a match: below FreeCoinsBelow,
+	// after FreeCoinsEveryMinutes the balance is topped up to FreeCoinsUpTo.
+	FreeCoinsBelow        int `json:"freeCoinsBelow"`
+	FreeCoinsUpTo         int `json:"freeCoinsUpTo"`
+	FreeCoinsEveryMinutes int `json:"freeCoinsEveryMinutes"`
 }
 
 // DefaultEconomyConfig returns the coin settings the game ships with.
 func DefaultEconomyConfig() EconomyConfig {
 	return EconomyConfig{
 		StartingCoins:         500,
-		FreeCoins:             100,
+		FreeCoinsBelow:        50,  // one stake: can't play
+		FreeCoinsUpTo:         100, // two matches
 		FreeCoinsEveryMinutes: 240, // 4 hours
 	}
 }
 
-// FreeCoinsEveryMillis is the free-coins cooldown in milliseconds, the unit the
+// FreeCoinsEveryMillis is the free-coins wait in milliseconds, the unit the
 // wallet works in.
 func (c EconomyConfig) FreeCoinsEveryMillis() int64 {
 	return int64(c.FreeCoinsEveryMinutes) * 60_000
@@ -223,9 +228,10 @@ func LoadEconomyConfig(ctx context.Context, logger runtime.Logger, nk runtime.Na
 		logger.WithField("value", c.StartingCoins).Warn("bad startingCoins, using default")
 		c.StartingCoins = def.StartingCoins
 	}
-	if c.FreeCoins <= 0 {
-		logger.WithField("value", c.FreeCoins).Warn("bad freeCoins, using default")
-		c.FreeCoins = def.FreeCoins
+	if c.FreeCoinsBelow <= 0 || c.FreeCoinsUpTo < c.FreeCoinsBelow {
+		logger.WithField("below", c.FreeCoinsBelow).WithField("upTo", c.FreeCoinsUpTo).
+			Warn("freeCoinsBelow must be positive and at most freeCoinsUpTo, using defaults")
+		c.FreeCoinsBelow, c.FreeCoinsUpTo = def.FreeCoinsBelow, def.FreeCoinsUpTo
 	}
 	if c.FreeCoinsEveryMinutes <= 0 {
 		logger.WithField("value", c.FreeCoinsEveryMinutes).Warn("bad freeCoinsEveryMinutes, using default")

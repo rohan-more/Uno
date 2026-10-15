@@ -37,8 +37,19 @@ public class LobbyView : MonoBehaviour
     [SerializeField] private Color coinsGainColor = new(0.45f, 1f, 0.45f, 1f);
     [SerializeField] private Color coinsLossColor = new(1f, 0.45f, 0.45f, 1f);
 
+    [Tooltip("Optional: \"+70 free coins!\" after a top-up, or the wait while below the line. Empty otherwise.")]
+    [SerializeField] private TMP_Text freeCoinsText;
+    [Tooltip("{0} is how long until the top-up, e.g. \"2h 13m\".")]
+    [SerializeField] private string freeCoinsWaitFormat = "Free coins in {0}";
+    [Tooltip("{0} is how many were added.")]
+    [SerializeField] private string freeCoinsAddedFormat = "+{0} free coins!";
+    [SerializeField] private float freeCoinsAddedSeconds = 3f;
+
     private float nextCountdownRefresh;
     private NumberCounter coinsCounter;
+    private float freeCoinsAddedUntil;
+    private long freeCoinsAdded;
+    private float nextDueRefresh;
 
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
@@ -80,7 +91,10 @@ public class LobbyView : MonoBehaviour
             cancelButton.onClick.RemoveListener(OnCancelClicked);
         
         if (Services.Wallet != null)
+        {
             Services.Wallet.OnChanged -= ShowCoins;
+            Services.Wallet.OnFreeCoinsAdded -= ShowFreeCoinsAdded;
+        }
 
         if (Connection != null)
         {
@@ -115,6 +129,9 @@ public class LobbyView : MonoBehaviour
         SetStatus("");
         SetInteractable(true);
         WatchWallet(); // the wallet may not have existed yet in OnEnable
+
+        // Back home: a match may have paid out, or free coins may be due
+        _ = Services.Wallet?.RefreshAsync();
         await CheckMatchInProgressAsync();
     }
 
@@ -213,6 +230,8 @@ public class LobbyView : MonoBehaviour
 
         Services.Wallet.OnChanged -= ShowCoins; // never twice
         Services.Wallet.OnChanged += ShowCoins;
+        Services.Wallet.OnFreeCoinsAdded -= ShowFreeCoinsAdded;
+        Services.Wallet.OnFreeCoinsAdded += ShowFreeCoinsAdded;
         ShowCoins();
     }
 
@@ -220,12 +239,34 @@ public class LobbyView : MonoBehaviour
     {
         coinsCounter.Tick();
 
-        // The free-coins countdown moves on its own; redraw it now and then
+        // The free-coins wait moves on its own; redraw it now and then
         if (Time.unscaledTime >= nextCountdownRefresh)
         {
             nextCountdownRefresh = Time.unscaledTime + 1f;
             ShowCoins();
+            RefreshIfFreeCoinsDue();
         }
+    }
+
+    // The server adds due free coins when the wallet is read, so ask once the
+    // wait is over (and not more than every few seconds if it's still settling).
+    private void RefreshIfFreeCoinsDue()
+    {
+        var wallet = Services.Wallet;
+        if (wallet == null || !wallet.FreeCoinsWaiting || wallet.FreeCoinsIn > TimeSpan.Zero)
+            return;
+        if (Connection == null || !Connection.IsConnected || Time.unscaledTime < nextDueRefresh)
+            return;
+
+        nextDueRefresh = Time.unscaledTime + 5f;
+        _ = wallet.RefreshAsync();
+    }
+
+    private void ShowFreeCoinsAdded(long added)
+    {
+        freeCoinsAdded = added;
+        freeCoinsAddedUntil = Time.unscaledTime + freeCoinsAddedSeconds;
+        ShowCoins();
     }
 
     private void ShowCoins()
@@ -235,6 +276,16 @@ public class LobbyView : MonoBehaviour
             return;
 
         coinsCounter.CountTo(wallet.Coins);
+
+        if (freeCoinsText != null)
+        {
+            if (Time.unscaledTime < freeCoinsAddedUntil)
+                freeCoinsText.text = string.Format(freeCoinsAddedFormat, freeCoinsAdded);
+            else if (wallet.FreeCoinsWaiting && wallet.FreeCoinsIn > TimeSpan.Zero)
+                freeCoinsText.text = string.Format(freeCoinsWaitFormat, CountdownText(wallet.FreeCoinsIn));
+            else
+                freeCoinsText.text = "";
+        }
     }
 
     /// <summary>"3h 12m", "12m 05s" or "45s".</summary>

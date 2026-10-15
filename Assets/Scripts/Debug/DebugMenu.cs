@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 /// <summary>
@@ -31,13 +32,14 @@ public class DebugMenu : MonoBehaviour
 
     [Header("Coins")]
     [SerializeField] private TMP_Text coinsText;
-    [Tooltip("\"Free coins: ready\" or how long until they are.")]
+    [Tooltip("Whether free coins are on their way, and when.")]
     [SerializeField] private TMP_Text freeCoinsText;
-    [Tooltip("How many coins Grant adds. Whole numbers, 1-100000.")]
+    [Tooltip("How many coins Grant adds; negative takes them away (not below 0). -100000 to 100000.")]
     [SerializeField] private TMP_InputField grantAmountInput;
     [SerializeField] private Button grantCoinsButton;
-    [Tooltip("Makes free coins claimable right now.")]
-    [SerializeField] private Button resetFreeCoinsButton;
+    [Tooltip("If below the free-coins line, tops up now instead of after the wait.")]
+    [FormerlySerializedAs("resetFreeCoinsButton")]
+    [SerializeField] private Button freeCoinsNowButton;
 
     [Header("Optional")]
     [SerializeField] private Button closeButton;
@@ -72,8 +74,8 @@ public class DebugMenu : MonoBehaviour
             closeButton.onClick.AddListener(Close);
         if (grantCoinsButton != null)
             grantCoinsButton.onClick.AddListener(GrantCoins);
-        if (resetFreeCoinsButton != null)
-            resetFreeCoinsButton.onClick.AddListener(ResetFreeCoins);
+        if (freeCoinsNowButton != null)
+            freeCoinsNowButton.onClick.AddListener(FreeCoinsNow);
     }
 
     private void OnDisable()
@@ -86,8 +88,8 @@ public class DebugMenu : MonoBehaviour
             closeButton.onClick.RemoveListener(Close);
         if (grantCoinsButton != null)
             grantCoinsButton.onClick.RemoveListener(GrantCoins);
-        if (resetFreeCoinsButton != null)
-            resetFreeCoinsButton.onClick.RemoveListener(ResetFreeCoins);
+        if (freeCoinsNowButton != null)
+            freeCoinsNowButton.onClick.RemoveListener(FreeCoinsNow);
     }
 
     private void Update()
@@ -124,15 +126,15 @@ public class DebugMenu : MonoBehaviour
         if (wallet != null && wallet.Loaded)
         {
             SetText(coinsText, $"Coins: {wallet.Coins:N0}");
-            SetText(freeCoinsText, wallet.FreeCoinsReady
-                ? "Free coins: ready"
-                : $"Free coins in {(int)wallet.FreeCoinsIn.TotalHours}h {wallet.FreeCoinsIn.Minutes:00}m {wallet.FreeCoinsIn.Seconds:00}s");
+            SetText(freeCoinsText, !wallet.FreeCoinsWaiting
+                ? $"Free coins: none (only below {wallet.FreeCoinsBelow})"
+                : $"Free coins (to {wallet.FreeCoinsUpTo}) in {(int)wallet.FreeCoinsIn.TotalHours}h {wallet.FreeCoinsIn.Minutes:00}m {wallet.FreeCoinsIn.Seconds:00}s");
         }
 
         if (grantCoinsButton != null)
             grantCoinsButton.interactable = Connection.IsConnected;
-        if (resetFreeCoinsButton != null)
-            resetFreeCoinsButton.interactable = Connection.IsConnected;
+        if (freeCoinsNowButton != null)
+            freeCoinsNowButton.interactable = Connection.IsConnected;
     }
 
     private void DropConnection()
@@ -157,23 +159,29 @@ public class DebugMenu : MonoBehaviour
     private async void GrantCoins()
     {
         var text = grantAmountInput != null ? grantAmountInput.text : "";
-        if (!int.TryParse(text, out var amount) || amount < 1 || amount > 100000)
+        if (!int.TryParse(text, out var amount) || amount == 0 || amount < -100000 || amount > 100000)
         {
-            SetText(statusText, "Enter a whole number from 1 to 100000");
+            SetText(statusText, "Enter a whole number from -100000 to 100000, not 0");
             return;
         }
 
-        SetText(statusText, $"Granting {amount:N0} coins\u2026");
+        string what = amount > 0 ? $"Granted {amount:N0} coins" : $"Took up to {-amount:N0} coins";
         bool ok = await Services.Wallet.DebugGrantAsync(amount);
-        SetText(statusText, ok ? $"Granted {amount:N0} coins"
+        SetText(statusText, ok ? what
             : "Grant refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
     }
 
-    private async void ResetFreeCoins()
+    private async void FreeCoinsNow()
     {
-        bool ok = await Services.Wallet.DebugResetFreeCoinsAsync();
-        SetText(statusText, ok ? "Free coins are claimable now"
-            : "Reset refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
+        var wallet = Services.Wallet;
+        long before = wallet.Coins;
+        bool ok = await wallet.DebugFreeCoinsNowAsync();
+        if (!ok)
+            SetText(statusText, "Refused: is the server running with UNO_DEBUG_TOOLS=true? (see the console)");
+        else if (wallet.Coins > before)
+            SetText(statusText, $"Topped up {wallet.Coins - before:N0} free coins");
+        else
+            SetText(statusText, $"Nothing to top up: free coins only come below {wallet.FreeCoinsBelow}");
     }
 
     private void Close() => panel.SetActive(false);

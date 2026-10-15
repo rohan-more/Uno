@@ -1,6 +1,6 @@
 # Coins, stakes and game over: plan
 
-Status: **phase 1 done; phase 2 (wallet) built, being tested.** Built on branch
+Status: **phases 1 and 2 done; free coins reworked into a rescue.** Built on branch
 `Rohan/GameOverRewards`, one phase at a time. Every number here is a server
 setting, tunable from the Nakama console like the turn timer.
 
@@ -36,7 +36,7 @@ place** (shown as "=2").
 | Stake per seat, fixed when the lobby is created | 50 |
 | Pot (4 seats) | 200 |
 | Payout by place | 60% / 30% / 10% / 0% |
-| Free coins | 100, claimable every 4 hours |
+| Free coins | Below 50, topped up to 100 after 4 hours |
 | House cut | none for now |
 
 - **Ties** pool the shares of the places they cover and split them evenly.
@@ -140,9 +140,31 @@ Stored by the server in its own collection, one per staked match:
 
 ## Free coins
 
-- `claim_free_coins` grants 100 if 4 hours have passed since your last claim
-  (server clock), and returns your new balance and when you can claim next.
-- The home screen shows a claim button, or a countdown until the next claim.
+Free coins get broke players back into the game; they never refill what you
+lost. A version that topped everyone up to 500 made losing cost nothing but
+waiting, so there was no reason to try to win.
+
+- **Only when you can't play.** Once your balance is below **50** (one stake),
+  a 4 hour wait starts. When it's over you're topped up to exactly **100**: two
+  matches, no more.
+- **Automatic.** Nothing to claim: the server adds them the next time the wallet
+  is read (login, the home screen, a reconnect). No scheduled job; it compares
+  the time the wait began with now.
+- **Nothing is saved up.** Getting back to 50 or more cancels the wait, so a
+  rich player who loses a few matches gets nothing, and a long absence still
+  only tops up to 100.
+- **Not during a match.** While you're seated in one, your stake is held and the
+  balance looks low, so nothing changes until you're home.
+- Anything above 100 is only ever won.
+
+| Setting | Value |
+|---|---|
+| `freeCoinsBelow` | 50 |
+| `freeCoinsUpTo` | 100 |
+| `freeCoinsEveryMinutes` | 240 |
+
+The home screen announces a top-up ("+70 free coins") as the balance counts up,
+and shows how long until the next one while you're waiting.
 
 ## Debug tools
 
@@ -151,8 +173,9 @@ refused unless the server setting `debugTools` is on, which it is only locally.
 
 | RPC | Does |
 |---|---|
-| `debug_grant_coins` | Adds an amount to your wallet (ledger kind `debug`) |
-| `debug_reset_free_coins` | Makes free coins claimable right now |
+| `debug_grant_coins` | Adds an amount to your wallet (ledger kind `debug`); a negative amount takes coins away, to go broke |
+| `debug_free_coins_now` | If you're below the line, tops up now instead of in 4 hours |
+| `DEBUG_WIN` (phase 3) | Match op: ends the game now with a chosen seat as the winner, the others ranked by their hands, then pays out and shows the results like any game over |
 
 The menu is meant to grow: later, items or anything else worth granting.
 
@@ -167,19 +190,20 @@ The menu is meant to grow: later, items or anything else worth granting.
 | `REMOVED` reasons | Add `LEFT` and `NOT_ENOUGH_COINS`. |
 | Error code | `NOT_ENOUGH_COINS` from `find_match` and joining. |
 | Seat kind hidden | `kind` dropped from `LOBBY_STATE` and `GAME_STATE` seats; `SEAT_CONTROL` no longer broadcast. |
-| New RPCs | `claim_free_coins`, `debug_grant_coins`, `debug_reset_free_coins`. |
+| New RPCs | `debug_grant_coins`, `debug_free_coins_now`; `get_wallet` tops up free coins. |
 | Lobby label | Includes the stake, so tables can be grouped by stake later. |
 | Balance | Read from the Nakama account wallet, which the client already loads. |
 
 ## Client
 
-- **Home:** coin balance, Play disabled below the stake, free-coins button or
-  countdown.
+- **Home:** coin balance (counting up and down), Play disabled below the stake,
+  "+N free coins" when topped up, and the wait while you're below the line.
 - **Match:** a Leave button that warns you'll lose your stake.
 - **Reconnecting:** after a dropped socket the client reconnects and rejoins
   the match it was in; at startup it asks `current_match` and goes straight
   back to a match in progress.
-- **Debug menu (F1):** grant coins, reset the free-coins timer.
+- **Debug menu (F1):** grant or take coins, free coins now, and (phase 3) win
+  the match now for any seat.
 - **Results** (last phase), laid out like Card Party's: place (with "=2" for
   ties), avatar, name, cards left, coins won, then back home.
 
@@ -197,12 +221,16 @@ Each phase ships on its own, with server tests and `PROTOCOL.md` updated.
 2. **Wallet.** Starting coins, balance on the home screen, free coins every 4
    hours, the debug RPCs and the F1 menu.
 3. **Stakes.** The new game end and penalty ranking, charging at match start,
-   paying at game over, refunds, the escrow record and its cleanup.
+   paying at game over, refunds, the escrow record and its cleanup. First the
+   `DEBUG_WIN` op and an F1 "win now" button, to reach a game over in seconds
+   while building the rest.
 4. **Results screen.** The Card Party-style leaderboard, then back home.
 5. **Later.** Stake tiers, XP and levels, a "Next game" countdown for a rematch,
    bot thinking-time variation.
 
 ## Open questions
 
-- **Free coins:** 100 every 4 hours is a starting point; watch whether players
-  run dry.
+- **Free coins:** below 50, up to 100, after 4 hours is a starting point; watch
+  whether players run dry.
+- **Starting coins:** 500 is now the most anyone has without winning (10
+  matches). 300 would make losses sting sooner.

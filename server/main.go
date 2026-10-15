@@ -62,10 +62,9 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 		return err
 	}
 	for id, fn := range map[string]func(context.Context, runtime.Logger, *sql.DB, runtime.NakamaModule, string) (string, error){
-		"get_wallet":             rpcGetWallet,
-		"claim_free_coins":       rpcClaimFreeCoins,
-		"debug_grant_coins":      rpcDebugGrantCoins,
-		"debug_reset_free_coins": rpcDebugResetFreeCoins,
+		"get_wallet":           rpcGetWallet,
+		"debug_grant_coins":    rpcDebugGrantCoins,
+		"debug_free_coins_now": rpcDebugFreeCoinsNow,
 	} {
 		if err := initializer.RegisterRpc(id, fn); err != nil {
 			return err
