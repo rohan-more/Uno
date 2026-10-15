@@ -414,7 +414,7 @@ public class MatchView : MonoBehaviour
             cards.Add($"{card.defId}={points}");
         }
 
-        var line = $"Game over: place {r.place}, seat {r.seat}, {r.cardsLeft} cards, {r.penalty} points [{string.Join(", ", cards)}]";
+        var line = $"Game over: place {r.place}, seat {r.seat}, {r.coins} coins, {r.cardsLeft} cards, {r.penalty} points [{string.Join(", ", cards)}]";
         if (recount != r.penalty || cards.Count != r.cardsLeft)
             Debug.LogWarning($"{line}: recounted {recount} points in {cards.Count} cards");
         else
@@ -445,9 +445,12 @@ public class MatchView : MonoBehaviour
         if (removedPanel != null)
             removedPanel.SetActive(true);
         if (removedText != null)
-            removedText.text = reason == RemovedReasons.Left
-                ? "You left the match."
-                : "You missed too many turns. A bot took your seat.";
+            removedText.text = reason switch
+            {
+                RemovedReasons.Left => "You left the match.",
+                RemovedReasons.NotEnoughCoins => "You don't have enough coins for this match.",
+                _ => "You missed too many turns. A bot took your seat.",
+            };
 
         StartCoroutine(ReturnHomeAfterDelay());
     }

@@ -41,6 +41,10 @@ public class MatchState
     /// <summary>Each seat's place, cards left and penalty once the game is over, in place order; empty before.</summary>
     public ResultMsg[] Results { get; private set; } = new ResultMsg[0];
 
+    /// <summary>What each seat paid to play, and what the table plays for; 0 for a free match.</summary>
+    public long Stake { get; private set; }
+    public long Pot { get; private set; }
+
     /// <summary>The card you drew this turn and may still play, or -1.</summary>
     public int DrawnCardId { get; set; } = -1;
 
@@ -72,6 +76,8 @@ public class MatchState
         HasStarted = msg.startsInMs <= 0;
         Ranking = msg.ranking ?? new int[0];
         Results = msg.results ?? new ResultMsg[0];
+        Stake = msg.stake;
+        Pot = msg.pot;
         Seq = msg.seq;
         ActiveColor = ParseColor(msg.activeColor);
         TopCard = ToCard(msg.topCard);
@@ -101,8 +107,10 @@ public class MatchState
     }
 
     /// <summary>Records how the game ended: places, and the cards each seat was left with.</summary>
-    public void ApplyResults(int[] ranking, ResultMsg[] results)
+    public void ApplyResults(int[] ranking, ResultMsg[] results, long stake, long pot)
     {
+        Stake = stake;
+        Pot = pot;
         Ranking = ranking ?? new int[0];
         Results = results ?? new ResultMsg[0];
         foreach (var r in Results)

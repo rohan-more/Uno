@@ -45,6 +45,8 @@ public class GameStateMsg
     public int startsInMs;  // only before the first turn
     public int[] ranking;
     public ResultMsg[] results; // once the game is over
+    public long stake;          // each seat's stake; 0 for a free match
+    public long pot;
     public int seq;
 }
 
@@ -57,6 +59,7 @@ public class ResultMsg
     public int cardsLeft;
     public int penalty;    // the hidden tie-break between equal card counts; never shown to players
     public CardMsg[] cards; // what they were left holding
+    public long coins;      // what this place won; a bot's is only for show
 }
 
 /// <summary>
@@ -79,6 +82,8 @@ public class MatchEventMsg
     public bool connected;   // PLAYER_CONNECTION
     public int[] ranking;    // GAME_OVER: seats in place order; seat is the winner
     public ResultMsg[] results; // GAME_OVER
+    public long stake;          // GAME_OVER
+    public long pot;            // GAME_OVER
 }
 
 /// <summary>Opcode 102: everything one action caused, in order.</summary>
@@ -111,6 +116,7 @@ public static class RemovedReasons
 {
     public const string MissedTurns = "MISSED_TURNS"; // connected or not
     public const string Left = "LEFT";                // we sent LEAVE_MATCH
+    public const string NotEnoughCoins = "NOT_ENOUGH_COINS"; // couldn't cover the stake at the start
 }
 
 /// <summary>Body of DEBUG_WIN and DEBUG_ONE_CARD.</summary>
@@ -158,6 +164,7 @@ public static class UnoErrorCodes
     public const string BadMessage = "BAD_MESSAGE";
     public const string CannotExtend = "CANNOT_EXTEND";
     public const string DebugToolsOff = "DEBUG_TOOLS_OFF";
+    public const string NotEnoughCoins = "NOT_ENOUGH_COINS";
 }
 
 /// <summary>Seat kinds.</summary>

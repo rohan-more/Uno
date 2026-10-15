@@ -45,11 +45,20 @@ public class LobbyView : MonoBehaviour
     [SerializeField] private string freeCoinsAddedFormat = "+{0} free coins!";
     [SerializeField] private float freeCoinsAddedSeconds = 3f;
 
+    [Tooltip("Optional: what a match costs, or how many coins you need when you're short.")]
+    [SerializeField] private TMP_Text stakeText;
+    [SerializeField] private string stakeFormat = "Entry {0}";
+    [SerializeField] private string shortFormat = "You need {0} coins to play";
+
+    [Tooltip("Goes back from matchmaking when the server sends you home. Found in the scene if left empty.")]
+    [SerializeField] private ScreenFlow screenFlow;
+
     private float nextCountdownRefresh;
     private NumberCounter coinsCounter;
     private float freeCoinsAddedUntil;
     private long freeCoinsAdded;
     private float nextDueRefresh;
+    private bool playAllowed; // by everything except coins; see RefreshPlayButton
 
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
@@ -78,6 +87,7 @@ public class LobbyView : MonoBehaviour
         {
             Connection.OnDisconnected += OnDisconnected;
             Connection.OnReconnected += OnReconnected;
+            Connection.OnMatchState += OnMatchState;
         }
         WatchWallet();
     }
@@ -100,6 +110,7 @@ public class LobbyView : MonoBehaviour
         {
             Connection.OnDisconnected -= OnDisconnected;
             Connection.OnReconnected -= OnReconnected;
+            Connection.OnMatchState -= OnMatchState;
         }
     }
 
@@ -150,6 +161,7 @@ public class LobbyView : MonoBehaviour
             playLabel.text = matchInProgress != null ? reconnectText : playText;
         }
         SetStatus(matchInProgress != null ? "You have a match in progress" : "");
+        RefreshPlayButton(); // rejoining is allowed even when short of coins
     }
 
     /// <summary>Fills in the name and avatar the server gave this account.</summary>
@@ -193,6 +205,7 @@ public class LobbyView : MonoBehaviour
         var matchId = await Connection.FindMatchAsync();
         if (matchId == null || !await Connection.JoinMatchAsync(matchId))
         {
+            _ = Services.Wallet?.RefreshAsync(); // in case coins were the reason
             SetStatus("Couldn't join a match");
             ShowSearching(false);
             SetInteractable(true);
@@ -276,6 +289,7 @@ public class LobbyView : MonoBehaviour
             return;
 
         coinsCounter.CountTo(wallet.Coins);
+        RefreshPlayButton();
 
         if (freeCoinsText != null)
         {
@@ -314,7 +328,43 @@ public class LobbyView : MonoBehaviour
 
     private void SetInteractable(bool value)
     {
-        playButton.interactable = value;
+        playAllowed = value;
+        RefreshPlayButton();
+    }
+
+    // Play needs enough coins for the stake, unless it's rejoining a match
+    // already paid for.
+    private void RefreshPlayButton()
+    {
+        var wallet = Services.Wallet;
+        bool canAfford = wallet == null || wallet.CanAffordMatch || matchInProgress != null;
+        playButton.interactable = playAllowed && canAfford;
+
+        if (stakeText != null)
+        {
+            stakeText.text = wallet == null || !wallet.Loaded || wallet.Stake <= 0 || matchInProgress != null ? ""
+                : string.Format(canAfford ? stakeFormat : shortFormat, wallet.Stake);
+        }
+    }
+
+    // The server sends REMOVED if you couldn't cover the stake when the match
+    // started. That arrives here, on the matchmaking screen: go back home.
+    private void OnMatchState(long opCode, string json)
+    {
+        if (opCode != UnoOpCodes.Removed)
+            return;
+        var removed = JsonUtility.FromJson<MatchRemovedMsg>(json);
+        if (removed?.reason != RemovedReasons.NotEnoughCoins)
+            return;
+
+        if (screenFlow == null)
+            screenFlow = FindObjectOfType<ScreenFlow>();
+        if (screenFlow != null)
+            screenFlow.ShowLobby();
+        ShowSearching(false);
+        SetInteractable(true);
+        SetStatus("Not enough coins for that match");
+        _ = Services.Wallet?.RefreshAsync();
     }
 
     private void ShowSearching(bool value)

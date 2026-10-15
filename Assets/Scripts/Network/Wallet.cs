@@ -28,6 +28,12 @@ public interface IWalletService
     /// <summary>...and top it up to this.</summary>
     int FreeCoinsUpTo { get; }
 
+    /// <summary>What a match costs to enter. Below it you can't play.</summary>
+    int Stake { get; }
+
+    /// <summary>Enough coins for a match (true until the wallet has loaded, so nothing locks up early).</summary>
+    bool CanAffordMatch { get; }
+
     /// <summary>Reads the balance. The server tops up free coins first if they're due.</summary>
     Task<bool> RefreshAsync();
 
@@ -84,6 +90,10 @@ public class Wallet : IWalletService
 
     public int FreeCoinsUpTo { get; private set; }
 
+    public int Stake { get; private set; }
+
+    public bool CanAffordMatch => !Loaded || Coins >= Stake;
+
     public Task<bool> RefreshAsync() => CallAsync("get_wallet");
 
     public Task<bool> DebugGrantAsync(int amount) =>
@@ -116,6 +126,7 @@ public class Wallet : IWalletService
         freeCoinsDueAt = Time.realtimeSinceStartup + info.freeCoinsInMs / 1000f;
         FreeCoinsBelow = info.freeCoinsBelow;
         FreeCoinsUpTo = info.freeCoinsUpTo;
+        Stake = info.stake;
         Loaded = true;
 
         OnChanged?.Invoke();
@@ -132,6 +143,7 @@ public class Wallet : IWalletService
         public long freeCoinsInMs;
         public int freeCoinsBelow;
         public int freeCoinsUpTo;
+        public int stake;
     }
 
     [Serializable]

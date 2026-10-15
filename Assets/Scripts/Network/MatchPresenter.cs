@@ -310,7 +310,7 @@ public class MatchPresenter : MonoBehaviour
                 break;
 
             case UnoEventTypes.GameOver:
-                State.ApplyResults(e.ranking, e.results);
+                State.ApplyResults(e.ranking, e.results, e.stake, e.pot);
                 break;
         }
     }
