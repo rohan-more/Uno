@@ -1,6 +1,6 @@
 # Coins, stakes and game over: plan
 
-Status: **phases 1 and 2 done; free coins reworked into a rescue, being tested.** Built on branch
+Status: **phases 1 and 2 done; phase 3 (stakes) built, being tested.** Built on branch
 `Rohan/GameOverRewards`, one phase at a time. Every number here is a server
 setting, tunable from the Nakama console like the turn timer.
 
@@ -104,28 +104,32 @@ is tagged `{ matchId, kind }`, where `kind` is `grant`, `stake`, `payout`,
 | Account created | Grant the starting coins, once (the after-login hook already runs on creation). |
 | Joining a lobby | Nothing is charged. `find_match` and the join check refuse anyone below the stake with `NOT_ENOUGH_COINS`. |
 | Leaving the lobby | Free; a bot takes the seat (as today). |
-| **Match starts** | Charge every seated human in **one** wallet update, and save an **escrow record**: match id, who paid, stake, status `held`. Anyone who can no longer pay is swapped for a bot and told why. |
-| **Game over** | Rank the seats, pay the human seats in one wallet update, mark the escrow `settled`, send the results. |
-| Match ends **without** a game over | Refund every seat a human still holds (away within the grace window, never replaced), mark the escrow `refunded`. Forfeited seats stay forfeited. |
-
-The escrow status is checked before every step, so a retry can never charge or
-pay twice.
+| **Match starts** | Take every seated human's stake and create the **escrow record**, in **one** transaction. Anyone who can no longer pay is swapped for a bot and told why. |
+| A bot takes a seat | The record marks that seat forfeited. |
+| **Game over** | Rank the seats, send the results with each place's coins, then pay the humans still in their seats and delete the record, in one transaction. A failed payout is retried every tick, and again when the match closes. |
+| Match ends **without** a game over | Refund every seat a human still holds (away within the grace window, never replaced) and delete the record, in one transaction. Forfeited seats stay forfeited. |
 
 ### Escrow record
 
-Stored by the server in its own collection, one per staked match:
+Stored by the server in collection `escrow`, key the match id, one per staked
+match:
 
 ```json
 {
   "matchId": "…",
   "stake": 50,
-  "status": "held",          // held → settled | refunded
   "seats": [
     { "seat": 0, "userId": "…", "paid": 50, "forfeited": false }
   ],
-  "createdAt": "2026-10-09T12:00:00Z"
+  "createdAtMs": 1791982283716
 }
 ```
+
+There's no status field: the record **exists exactly while stakes are held**.
+Nakama's `MultiUpdate` changes wallets and storage in a single transaction,
+so the record is created with the stakes taken and deleted with the payout or
+refund. A crash can't land between the two, so nothing can be charged or paid
+twice, and nothing is lost.
 
 ## Edge cases
 
@@ -138,8 +142,8 @@ Stored by the server in its own collection, one per staked match:
 | The server's network drops everyone at once | Nobody chose to leave, so the match closes and everyone is refunded. (The match closes after 10 s with no humans connected, which is before anyone could miss 3 turns; that stays, and becomes a refund.) |
 | Only human in a bot game leaves | Forfeit; the match closes. |
 | Disconnect after game over | Nothing lost; the payout landed at game over. Your balance shows it when you're back. |
-| **Server restart or crash mid-match** | Matches exist only in the server's memory and are gone, but the escrow is saved. A cleanup on server start, and again on the player's next login, refunds every `held` escrow whose match no longer exists. |
-| A wallet update fails at game over | The escrow stays `held` with the results saved; the same cleanup pays them later. |
+| **Server restart or crash mid-match** | Matches exist only in the server's memory and are gone, but the escrow record is saved. On server start, every record left over is refunded. (A cleanup at login isn't needed: a match only vanishes without closing when the server itself goes.) |
+| A wallet update fails at game over | The record stays; the payout is retried every tick and once more as the match closes. If the server dies first, the restart refunds the stakes instead. |
 | Trying to start a second match while seated in one | Refused; the client rejoins the one in progress via `current_match`. |
 | A bot wins | The bot's share goes to the house; humans still get their places' shares. |
 | Stake setting changed while lobbies are open | Each lobby keeps the stake it was created with. |

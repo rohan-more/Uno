@@ -84,6 +84,8 @@ type GameStateMsg struct {
 	StartsInMs  int         `json:"startsInMs,omitempty"` // only before the first turn
 	Ranking     []int       `json:"ranking"`
 	Results     []ResultMsg `json:"results,omitempty"` // once the game is over
+	Stake       int64       `json:"stake"`             // each seat's stake; 0 for a free match
+	Pot         int64       `json:"pot"`
 	Seq         int         `json:"seq"`
 }
 
@@ -93,6 +95,7 @@ type ResultMsg struct {
 	Place     int       `json:"place"` // 1 = winner; tied seats share a place
 	CardsLeft int       `json:"cardsLeft"`
 	Penalty   int       `json:"penalty"`
+	Coins     int64     `json:"coins"` // what this place won; a bot's is for show
 	Cards     []CardMsg `json:"cards"` // what they were left holding
 }
 
@@ -112,6 +115,8 @@ type EventMsg struct {
 	Connected   *bool       `json:"connected,omitempty"` // PLAYER_CONNECTION
 	Ranking     []int       `json:"ranking,omitempty"`   // GAME_OVER
 	Results     []ResultMsg `json:"results,omitempty"`   // GAME_OVER
+	Stake       int64       `json:"stake,omitempty"`     // GAME_OVER
+	Pot         int64       `json:"pot,omitempty"`       // GAME_OVER
 }
 
 // EventsMsg (op 102) carries everything one action caused, in order.
@@ -135,8 +140,9 @@ type RemovedMsg struct {
 
 // Why a player lost their seat.
 const (
-	RemovedMissedTurns = "MISSED_TURNS" // includes being disconnected through them
-	RemovedLeft        = "LEFT"         // LEAVE_MATCH
+	RemovedMissedTurns    = "MISSED_TURNS"     // includes being disconnected through them
+	RemovedLeft           = "LEFT"             // LEAVE_MATCH
+	RemovedNotEnoughCoins = "NOT_ENOUGH_COINS" // couldn't cover the stake when the match started
 )
 
 // Event type names, as sent to clients.
@@ -168,6 +174,7 @@ const (
 	ErrCodeNotImplemented    = "NOT_IMPLEMENTED"
 	ErrCodeCannotExtend      = "CANNOT_EXTEND"
 	ErrCodeDebugToolsOff     = "DEBUG_TOOLS_OFF"
+	ErrCodeNotEnoughCoins    = "NOT_ENOUGH_COINS" // find_match, and joining a staked lobby
 )
 
 // ---------- client -> server ----------

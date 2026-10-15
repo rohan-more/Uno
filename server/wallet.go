@@ -68,6 +68,8 @@ type WalletInfo struct {
 	FreeCoinsInMs    int64 `json:"freeCoinsInMs"`
 	FreeCoinsBelow   int   `json:"freeCoinsBelow"`
 	FreeCoinsUpTo    int   `json:"freeCoinsUpTo"`
+	// Stake is what a match costs to enter today; below it, Play is off.
+	Stake int `json:"stake"`
 }
 
 // grantStarterCoins gives an account its starting coins, once ever. It runs on
@@ -114,7 +116,7 @@ func settleFreeCoins(ctx context.Context, store walletStore, cfg EconomyConfig, 
 		return WalletInfo{}, err
 	}
 
-	info := WalletInfo{Coins: coins, FreeCoinsBelow: cfg.FreeCoinsBelow, FreeCoinsUpTo: cfg.FreeCoinsUpTo}
+	info := WalletInfo{Coins: coins, FreeCoinsBelow: cfg.FreeCoinsBelow, FreeCoinsUpTo: cfg.FreeCoinsUpTo, Stake: cfg.Stake}
 	below := coins < int64(cfg.FreeCoinsBelow)
 	dueAt := state.FreeCoinsClockMs + cfg.FreeCoinsEveryMillis()
 

@@ -188,9 +188,15 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 
 // ---------- economy ----------
 
-// EconomyConfig holds the coin settings. Stake and payouts join in phase 3.
+// EconomyConfig holds the coin settings.
 type EconomyConfig struct {
 	StartingCoins int `json:"startingCoins"` // given once to every account
+
+	// Every seat pays Stake when a match starts (bots too, from the house),
+	// and the pot is paid out by place: PayoutPercents[0] to 1st, and so on.
+	// A lobby keeps the stake it was created with. Quick matches are free.
+	Stake          int   `json:"stake"`
+	PayoutPercents []int `json:"payoutPercents"`
 
 	// Free coins rescue players who can't afford a match: below FreeCoinsBelow,
 	// after FreeCoinsEveryMinutes the balance is topped up to FreeCoinsUpTo.
@@ -203,6 +209,8 @@ type EconomyConfig struct {
 func DefaultEconomyConfig() EconomyConfig {
 	return EconomyConfig{
 		StartingCoins:         500,
+		Stake:                 50,
+		PayoutPercents:        []int{60, 30, 10, 0},
 		FreeCoinsBelow:        50,  // one stake: can't play
 		FreeCoinsUpTo:         100, // two matches
 		FreeCoinsEveryMinutes: 240, // 4 hours
@@ -228,6 +236,14 @@ func LoadEconomyConfig(ctx context.Context, logger runtime.Logger, nk runtime.Na
 		logger.WithField("value", c.StartingCoins).Warn("bad startingCoins, using default")
 		c.StartingCoins = def.StartingCoins
 	}
+	if c.Stake < 0 {
+		logger.WithField("value", c.Stake).Warn("bad stake, using default")
+		c.Stake = def.Stake
+	}
+	if !validPayouts(c.PayoutPercents) {
+		logger.WithField("value", c.PayoutPercents).Warn("payoutPercents must be up to 4 values, none negative, adding up to 100 or less; using default")
+		c.PayoutPercents = def.PayoutPercents
+	}
 	if c.FreeCoinsBelow <= 0 || c.FreeCoinsUpTo < c.FreeCoinsBelow {
 		logger.WithField("below", c.FreeCoinsBelow).WithField("upTo", c.FreeCoinsUpTo).
 			Warn("freeCoinsBelow must be positive and at most freeCoinsUpTo, using defaults")
@@ -238,6 +254,22 @@ func LoadEconomyConfig(ctx context.Context, logger runtime.Logger, nk runtime.Na
 		c.FreeCoinsEveryMinutes = def.FreeCoinsEveryMinutes
 	}
 	return c
+}
+
+// validPayouts accepts one share per place, at most one per seat, that never
+// pay out more than the pot. Anything short of 100 stays with the house.
+func validPayouts(percents []int) bool {
+	if len(percents) == 0 || len(percents) > seatCount {
+		return false
+	}
+	total := 0
+	for _, p := range percents {
+		if p < 0 {
+			return false
+		}
+		total += p
+	}
+	return total <= 100
 }
 
 // ---------- storage ----------

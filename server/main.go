@@ -74,6 +74,13 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 		logger.Warn("debug tools are ON: debug RPCs accept calls")
 	}
 
+	// Matches live only in memory, so any stakes still held now belong to a
+	// match that died with the last server: give them back.
+	recoverStakes(ctx, logger, nakamaBank{nk}, func(matchID string) bool {
+		match, err := nk.MatchGet(ctx, matchID)
+		return err == nil && match != nil
+	})
+
 	logger.Info("Uno module loaded")
 	return nil
 }

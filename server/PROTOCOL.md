@@ -214,6 +214,7 @@ before they are kicked (or the match closes, if they were the last human):
 |---|---|
 | `MISSED_TURNS` | Ran out of time on 3 turns in a row, connected or not |
 | `LEFT` | Sent `LEAVE_MATCH` |
+| `NOT_ENOUGH_COINS` | Couldn't cover the stake when the match started; a bot took the seat. Arrives on the matchmaking screen |
 
 Nothing else follows. The client should say why and go back to the home screen.
 
@@ -298,10 +299,17 @@ at once.
 ```json
 {
   "startingCoins": 500,
-  "freeCoins": 100,
+  "stake": 50,
+  "payoutPercents": [60, 30, 10, 0],
+  "freeCoinsBelow": 50,
+  "freeCoinsUpTo": 100,
   "freeCoinsEveryMinutes": 240
 }
 ```
+
+`stake` is read when a lobby is created, and that lobby keeps it. `stake: 0`
+makes every match free. `payoutPercents` is one share per place, up to four,
+adding up to 100 or less; the rest stays with the house.
 
 - Defaults live in Go, so an empty database works.
 - Missing fields keep their default; invalid values fall back to the default and
@@ -344,8 +352,9 @@ at once.
   skipped, as above.
 - Players see places and coins (and may see cards left). The penalty is never
   shown: it's only the tie-break, sent so the client can check it.
-- `results` is in place order, with each seat's cards left so the results
-  screen can show them. Coins join each line with stakes (phase 3).
+- `results` is in place order, with each seat's cards left and the `coins` its
+  place won. `GAME_OVER` also carries the `stake` and the `pot`. A bot seat's
+  coins are only for show: the house keeps them. See section 11.
 - The match stays open for `postGameCloseMs` (30 s) for the results screen, then
   the server closes it. No rematch in v1.
 
@@ -383,8 +392,39 @@ All wallet RPCs reply with the same shape:
 | `debug_grant_coins` | `{ "amount": 500 }` | Adds coins, or takes them with a negative amount (not below 0). -100000 to 100000. **Debug only** |
 | `debug_free_coins_now` | `{}` | If below the line, tops up now. **Debug only** |
 
+The wallet reply also carries `stake`, what a match costs today, so the client
+can turn Play off below it.
+
 Debug RPCs answer `PERMISSION_DENIED` unless the server runs with
 `UNO_DEBUG_TOOLS=true` in its runtime env, which only `local.yml` sets.
+
+### Stakes
+
+Every match from `find_match` is played for `stake` coins a seat. Quick matches
+are free.
+
+- **Entering.** `find_match` fails with `NOT_ENOUGH_COINS` below the stake, and
+  joining a staked lobby is refused with that reason. Nothing is charged in the
+  lobby, so leaving it is free.
+- **The start.** Each human's stake is taken in one transaction. Anyone who
+  can no longer cover it gets `REMOVED` with `NOT_ENOUGH_COINS` and a bot takes
+  the seat. Bots pay in too, from the house, so the pot is always 4 stakes.
+- **Game over.** The pot is paid by place (`payoutPercents`). Seats sharing a
+  place pool the shares of the places they cover and split them evenly; what
+  doesn't divide stays with the house. Only humans still in their seat are
+  paid. A seat a bot took over forfeited its stake, and its winnings stay with
+  the house.
+- **Ending early.** A match that closes without a game over (everyone
+  dropped, the server shutting down) refunds every human still in their seat.
+- **Ledger.** Every movement is in the wallet ledger with `reason` `stake`,
+  `payout` or `refund`, and the `matchId`.
+
+The held stakes live in a server-owned record, collection `escrow`, key the
+match id. It's created in the same transaction that takes the stakes, records
+forfeits, and is deleted in the same transaction that pays out or refunds. So
+it exists exactly while coins are held. On startup the server refunds every
+record left over: matches live only in memory, so those matches died with the
+last server.
 
 ## 12. Not in v1
 
