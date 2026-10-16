@@ -5,7 +5,7 @@ using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 /// <summary>
-/// Testing tools behind F1. Put this on the debug canvas in the Boot scene; it
+/// Testing tools behind F1. Put this on the debug canvas in the Startup scene; it
 /// keeps the canvas alive across scene loads, and F1 shows the panel only while
 /// NakamaConnection's Debug Menu toggle is on.
 ///
@@ -64,7 +64,7 @@ public class DebugMenu : MonoBehaviour
 
     private void Awake()
     {
-        // Boot is loaded again when returning home: keep the first menu
+        // A second copy (e.g. a scene loaded again) keeps the first menu
         if (instance != null && instance != this)
         {
             Destroy(gameObject);

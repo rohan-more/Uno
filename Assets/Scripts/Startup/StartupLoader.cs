@@ -28,7 +28,7 @@ public class StartupLoader : MonoBehaviour
     [SerializeField] private Button retryButton;
 
     [Header("Flow")]
-    [SerializeField] private string homeSceneName = "Boot";
+    [SerializeField] private string homeSceneName = "Lobby";
     [Tooltip("Keep the screen up at least this long, so a fast start doesn't flash.")]
     [SerializeField] private float minimumSeconds = 1.5f;
     [Tooltip("How quickly the bar catches up with the real progress.")]

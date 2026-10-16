@@ -9,7 +9,7 @@ EditorBuildSettings:
     path: Assets/Scenes/Startup.unity
     guid: ab3c71e3813f87b4797abde9c1c389ba
   - enabled: 1
-    path: Assets/Scenes/Boot.unity
+    path: Assets/Scenes/Lobby.unity
     guid: 716e63543f2d6d74c8adcc89d7cf5a61
   - enabled: 1
     path: Assets/Scenes/MatchScene.unity

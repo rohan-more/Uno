@@ -660,7 +660,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   matchSceneName: MatchScene
-  homeSceneName: Boot
+  homeSceneName: Lobby
   sceneLoadAllowance: 0.5
 --- !u!114 &153629131
 MonoBehaviour:
@@ -3653,7 +3653,7 @@ MonoBehaviour:
   progressFill: {fileID: 1878924127}
   statusText: {fileID: 0}
   retryButton: {fileID: 0}
-  homeSceneName: Boot
+  homeSceneName: Lobby
   minimumSeconds: 1.5
   fillSpeed: 1.5
 --- !u!1 &2026508941

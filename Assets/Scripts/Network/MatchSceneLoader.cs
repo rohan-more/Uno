@@ -12,7 +12,7 @@ using UnityEngine.SceneManagement;
 public class MatchSceneLoader : MonoBehaviour
 {
     [SerializeField] private string matchSceneName = "MatchScene";
-    [SerializeField] private string homeSceneName = "Boot";
+    [SerializeField] private string homeSceneName = "Lobby";
 
     [Tooltip("Open the table this long before the first turn, so it appears just as play starts.")]
     [SerializeField] private float sceneLoadAllowance = 0.5f;

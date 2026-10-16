@@ -125,7 +125,7 @@ public class LobbyView : MonoBehaviour
             return;
         }
 
-        // Load the card and avatar art while connecting. Boot may already have
+        // Load the card and avatar art while connecting. The loading screen has usually already
         // connected; only connect if it hasn't.
         var assets = Services.Assets.PreloadAsync();
         var connected = Connection.IsConnected || await Connection.ConnectAsync();
