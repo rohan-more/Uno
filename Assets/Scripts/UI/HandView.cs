@@ -15,18 +15,16 @@ public class HandView : MonoBehaviour
     [SerializeField] private int ownerPlayerId;
     [SerializeField] private CardItem cardPrefab;
     [SerializeField] private HandLayout layout;
-    [SerializeField] private CardDatabase database;
+    private static CardDatabase database => Services.Assets.Cards;
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Opponent")]
-    [SerializeField] private Sprite cardBackSprite;
     [SerializeField] private TMP_Text cardCountText;
 
     public int CardCount => hand.Count;
 
     private readonly List<CardInstance> hand = new();
     private readonly List<CardItem> items = new();
-    private List<RectTransform> cardTransforms = new();
     public CardItem GetCardItem(CardInstance instance)
     {
         foreach (var t in items)
@@ -52,28 +50,6 @@ public class HandView : MonoBehaviour
             cardItem.SetInteractable(interactable);
         }*/
     }
-
-    public void CheckValidCards(RulesEngine rulesEngine, GameState gameState, PlayerState playerState)
-    {
-        cardTransforms.Clear();
-        for (int i = 0; i < hand.Count; i++)
-        {
-            var instance = hand[i];
-            var item = items[i];
-            cardTransforms.Add(item.RectTransform);
-            bool canPlay = rulesEngine.CanPlayCard(instance, gameState, playerState, out var matchedRule);
-
-            item.SetEligible(canPlay);
-
-            if (canPlay)
-            {
-                //Debug.Log($"[HAND] Card {instance.CardId} is VALID (rule: {matchedRule.name})");
-            }
-        }
-        
-        layout.Layout(cardTransforms);
-    }
-
 
     /// <summary>
     /// Opponent hands: we only know how many cards they hold, so show that many backs.
@@ -121,7 +97,7 @@ public class HandView : MonoBehaviour
             var item = Instantiate(cardPrefab, transform);
 
             bool faceDown = mode == HandViewMode.Opponent;
-            item.Bind(instance, faceDown ? cardBackSprite : def?.FrontSprite, actionBus, playerIndex: 0);
+            item.Bind(instance, faceDown ? database.CardBack : def?.FrontSprite, actionBus, playerIndex: 0);
             item.SetClickable(mode == HandViewMode.Human);
             items.Add(item);
         }

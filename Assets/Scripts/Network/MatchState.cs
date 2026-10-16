@@ -17,7 +17,7 @@ public class MatchState
         public string Name = "";
         public int Avatar;
         public int CardCount;
-        public int Place;        // 0 while playing, else finishing position
+        public int Place;        // 0 while playing, then 1 for the winner and 2-4 by cards left
         public bool Connected = true;
 
         public bool IsBot => Kind == SeatKinds.Bot;
@@ -38,6 +38,13 @@ public class MatchState
     public int DeckCount { get; set; }
     public int[] Ranking { get; set; } = new int[0];
 
+    /// <summary>Each seat's place, cards left and penalty once the game is over, in place order; empty before.</summary>
+    public ResultMsg[] Results { get; private set; } = new ResultMsg[0];
+
+    /// <summary>What each seat paid to play, and what the table plays for; 0 for a free match.</summary>
+    public long Stake { get; private set; }
+    public long Pot { get; private set; }
+
     /// <summary>The card you drew this turn and may still play, or -1.</summary>
     public int DrawnCardId { get; set; } = -1;
 
@@ -47,7 +54,13 @@ public class MatchState
     /// <summary>Counts up with every EVENTS message; a gap means we missed something.</summary>
     public int Seq { get; set; } = -1;
 
-    public bool IsYourTurn => CurrentSeat == YourSeat && !IsOver;
+    /// <summary>
+    /// False between the deal and the first TURN_CHANGED: the server pauses so
+    /// everyone sees the table, and rejects moves until the first turn begins.
+    /// </summary>
+    public bool HasStarted { get; set; }
+
+    public bool IsYourTurn => HasStarted && CurrentSeat == YourSeat && !IsOver;
     public bool IsOver => Ranking != null && Seats != null && Ranking.Length == Seats.Length && Seats.Length > 0;
 
     /// <summary>Replaces everything with a fresh snapshot from the server.</summary>
@@ -60,7 +73,11 @@ public class MatchState
         DeckCount = msg.deckCount;
         DrawnCardId = msg.drawnCardId;
         TurnMsLeft = msg.turnMsLeft;
+        HasStarted = msg.startsInMs <= 0;
         Ranking = msg.ranking ?? new int[0];
+        Results = msg.results ?? new ResultMsg[0];
+        Stake = msg.stake;
+        Pot = msg.pot;
         Seq = msg.seq;
         ActiveColor = ParseColor(msg.activeColor);
         TopCard = ToCard(msg.topCard);
@@ -86,6 +103,24 @@ public class MatchState
                 Place = s.place,
                 Connected = s.connected,
             };
+        }
+    }
+
+    /// <summary>Records how the game ended: places, and the cards each seat was left with.</summary>
+    public void ApplyResults(int[] ranking, ResultMsg[] results, long stake, long pot)
+    {
+        Stake = stake;
+        Pot = pot;
+        Ranking = ranking ?? new int[0];
+        Results = results ?? new ResultMsg[0];
+        foreach (var r in Results)
+        {
+            var seat = SeatAt(r.seat);
+            if (seat != null)
+            {
+                seat.Place = r.place;
+                seat.CardCount = r.cardsLeft;
+            }
         }
     }
 

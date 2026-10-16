@@ -1,18 +1,19 @@
 using System;
+using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
 /// Home screen: shows who you are and starts matchmaking.
-/// Talks only to NakamaConnection; it never touches the Nakama client directly.
+/// Talks only to Services.Connection; it never touches the Nakama client directly.
 /// </summary>
 public class LobbyView : MonoBehaviour
 {
     [Header("Profile")]
     [SerializeField] private TMP_Text nameText;
     [SerializeField] private Image avatarImage;
-    [SerializeField] private AvatarLibrary avatars;
+    private static AvatarLibrary avatars => Services.Assets.Avatars;
 
     [Header("Buttons")]
     [SerializeField] private Button playButton;
@@ -23,10 +24,56 @@ public class LobbyView : MonoBehaviour
     [SerializeField] private Button cancelButton;
     [SerializeField] private TMP_Text statusText;
 
+    [Tooltip("The Play button's label. Shows the reconnect text while a match is in progress. " +
+             "Found on the button if left empty.")]
+    [SerializeField] private TMP_Text playLabel;
+    [SerializeField] private string reconnectText = "REJOIN MATCH";
+
+    [Header("Coins")]
+    [Tooltip("The balance; counts up or down when it changes.")]
+    [SerializeField] private TMP_Text coinsText;
+    [SerializeField] private float coinsCountSeconds = 0.8f;
+    [Tooltip("Tint while the balance counts up or down. Alpha 0 keeps the text's colour.")]
+    [SerializeField] private Color coinsGainColor = new(0.45f, 1f, 0.45f, 1f);
+    [SerializeField] private Color coinsLossColor = new(1f, 0.45f, 0.45f, 1f);
+
+    [Tooltip("Optional: \"+70 free coins!\" after a top-up, or the wait while below the line. Empty otherwise.")]
+    [SerializeField] private TMP_Text freeCoinsText;
+    [Tooltip("{0} is how long until the top-up, e.g. \"2h 13m\".")]
+    [SerializeField] private string freeCoinsWaitFormat = "Free coins in {0}";
+    [Tooltip("{0} is how many were added.")]
+    [SerializeField] private string freeCoinsAddedFormat = "+{0} free coins!";
+    [SerializeField] private float freeCoinsAddedSeconds = 3f;
+
+    [Tooltip("Optional: what a match costs, or how many coins you need when you're short.")]
+    [SerializeField] private TMP_Text stakeText;
+    [SerializeField] private string stakeFormat = "Entry {0}";
+    [SerializeField] private string shortFormat = "You need {0} coins to play";
+
+    [Tooltip("Goes back from matchmaking when the server sends you home. Found in the scene if left empty.")]
+    [SerializeField] private ScreenFlow screenFlow;
+
+    private float nextCountdownRefresh;
+    private NumberCounter coinsCounter;
+    private float freeCoinsAddedUntil;
+    private long freeCoinsAdded;
+    private float nextDueRefresh;
+    private bool playAllowed; // by everything except coins; see RefreshPlayButton
+
     /// <summary>Names longer than this are cut short with an ellipsis.</summary>
     [SerializeField] private int maxNameLength = 12;
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
+
+    private void Awake()
+    {
+        coinsCounter = new NumberCounter(coinsText, CoinFormat.Short)
+        {
+            Seconds = coinsCountSeconds,
+            GainColor = coinsGainColor,
+            LossColor = coinsLossColor,
+        };
+    }
 
     private void OnEnable()
     {
@@ -37,7 +84,12 @@ public class LobbyView : MonoBehaviour
             cancelButton.onClick.AddListener(OnCancelClicked);
 
         if (Connection != null)
+        {
             Connection.OnDisconnected += OnDisconnected;
+            Connection.OnReconnected += OnReconnected;
+            Connection.OnMatchState += OnMatchState;
+        }
+        WatchWallet();
     }
 
     private void OnDisable()
@@ -47,9 +99,19 @@ public class LobbyView : MonoBehaviour
 
         if (cancelButton != null)
             cancelButton.onClick.RemoveListener(OnCancelClicked);
+        
+        if (Services.Wallet != null)
+        {
+            Services.Wallet.OnChanged -= ShowCoins;
+            Services.Wallet.OnFreeCoinsAdded -= ShowFreeCoinsAdded;
+        }
 
         if (Connection != null)
+        {
             Connection.OnDisconnected -= OnDisconnected;
+            Connection.OnReconnected -= OnReconnected;
+            Connection.OnMatchState -= OnMatchState;
+        }
     }
 
     private async void Start()
@@ -63,8 +125,11 @@ public class LobbyView : MonoBehaviour
             return;
         }
 
-        // Boot may already have connected; only connect if it hasn't.
+        // Load the card and avatar art while connecting. The loading screen has usually already
+        // connected; only connect if it hasn't.
+        var assets = Services.Assets.PreloadAsync();
         var connected = Connection.IsConnected || await Connection.ConnectAsync();
+        await assets;
         if (!connected)
         {
             SetStatus("Couldn't reach the server");
@@ -74,6 +139,29 @@ public class LobbyView : MonoBehaviour
         ShowProfile();
         SetStatus("");
         SetInteractable(true);
+        WatchWallet(); // the wallet may not have existed yet in OnEnable
+
+        // Back home: a match may have paid out, or free coins may be due
+        _ = Services.Wallet?.RefreshAsync();
+        await CheckMatchInProgressAsync();
+    }
+
+    // A match we still hold a seat in, if any: Play turns into Reconnect.
+    private string matchInProgress;
+    private string playText;
+
+    private async Task CheckMatchInProgressAsync()
+    {
+        matchInProgress = await Connection.MatchInProgressAsync();
+        if (playLabel == null)
+            playLabel = playButton.GetComponentInChildren<TMP_Text>();
+        if (playLabel != null)
+        {
+            playText ??= playLabel.text;
+            playLabel.text = matchInProgress != null ? reconnectText : playText;
+        }
+        SetStatus(matchInProgress != null ? "You have a match in progress" : "");
+        RefreshPlayButton(); // rejoining is allowed even when short of coins
     }
 
     /// <summary>Fills in the name and avatar the server gave this account.</summary>
@@ -97,6 +185,19 @@ public class LobbyView : MonoBehaviour
 
     private async void OnPlayClicked()
     {
+        if (matchInProgress != null)
+        {
+            SetInteractable(false);
+            SetStatus("Rejoining\u2026");
+            // On success the server's GAME_STATE opens the match scene
+            if (!await Connection.JoinMatchAsync(matchInProgress))
+            {
+                await CheckMatchInProgressAsync(); // it ended meanwhile: back to Find Match
+                SetInteractable(true);
+            }
+            return;
+        }
+
         SetInteractable(false);
         ShowSearching(true);
         SetStatus("Finding a match…");
@@ -104,6 +205,7 @@ public class LobbyView : MonoBehaviour
         var matchId = await Connection.FindMatchAsync();
         if (matchId == null || !await Connection.JoinMatchAsync(matchId))
         {
+            _ = Services.Wallet?.RefreshAsync(); // in case coins were the reason
             SetStatus("Couldn't join a match");
             ShowSearching(false);
             SetInteractable(true);
@@ -132,16 +234,137 @@ public class LobbyView : MonoBehaviour
 #endif
     }
 
+    // ---- coins ----
+
+    private void WatchWallet()
+    {
+        if (Services.Wallet == null)
+            return;
+
+        Services.Wallet.OnChanged -= ShowCoins; // never twice
+        Services.Wallet.OnChanged += ShowCoins;
+        Services.Wallet.OnFreeCoinsAdded -= ShowFreeCoinsAdded;
+        Services.Wallet.OnFreeCoinsAdded += ShowFreeCoinsAdded;
+        ShowCoins();
+    }
+
+    private void Update()
+    {
+        coinsCounter.Tick();
+
+        // The free-coins wait moves on its own; redraw it now and then
+        if (Time.unscaledTime >= nextCountdownRefresh)
+        {
+            nextCountdownRefresh = Time.unscaledTime + 1f;
+            ShowCoins();
+            RefreshIfFreeCoinsDue();
+        }
+    }
+
+    // The server adds due free coins when the wallet is read, so ask once the
+    // wait is over (and not more than every few seconds if it's still settling).
+    private void RefreshIfFreeCoinsDue()
+    {
+        var wallet = Services.Wallet;
+        if (wallet == null || !wallet.FreeCoinsWaiting || wallet.FreeCoinsIn > TimeSpan.Zero)
+            return;
+        if (Connection == null || !Connection.IsConnected || Time.unscaledTime < nextDueRefresh)
+            return;
+
+        nextDueRefresh = Time.unscaledTime + 5f;
+        _ = wallet.RefreshAsync();
+    }
+
+    private void ShowFreeCoinsAdded(long added)
+    {
+        freeCoinsAdded = added;
+        freeCoinsAddedUntil = Time.unscaledTime + freeCoinsAddedSeconds;
+        ShowCoins();
+    }
+
+    private void ShowCoins()
+    {
+        var wallet = Services.Wallet;
+        if (wallet == null || !wallet.Loaded)
+            return;
+
+        coinsCounter.CountTo(wallet.Coins);
+        RefreshPlayButton();
+
+        if (freeCoinsText != null)
+        {
+            if (Time.unscaledTime < freeCoinsAddedUntil)
+                freeCoinsText.text = string.Format(freeCoinsAddedFormat, freeCoinsAdded);
+            else if (wallet.FreeCoinsWaiting && wallet.FreeCoinsIn > TimeSpan.Zero)
+                freeCoinsText.text = string.Format(freeCoinsWaitFormat, CountdownText(wallet.FreeCoinsIn));
+            else
+                freeCoinsText.text = "";
+        }
+    }
+
+    /// <summary>"3h 12m", "12m 05s" or "45s".</summary>
+    private static string CountdownText(TimeSpan left)
+    {
+        if (left.TotalHours >= 1)
+            return $"{(int)left.TotalHours}h {left.Minutes:00}m";
+        if (left.TotalMinutes >= 1)
+            return $"{left.Minutes}m {left.Seconds:00}s";
+        return $"{Mathf.CeilToInt((float)left.TotalSeconds)}s";
+    }
+    
     private void OnDisconnected(string reason)
     {
         ShowSearching(false);
         SetInteractable(false);
-        SetStatus("Disconnected. Restart to reconnect.");
+        SetStatus("Connection lost. Reconnecting\u2026");
+    }
+
+    private async void OnReconnected()
+    {
+        SetInteractable(true);
+        SetStatus("");
+        await CheckMatchInProgressAsync();
     }
 
     private void SetInteractable(bool value)
     {
-        playButton.interactable = value;
+        playAllowed = value;
+        RefreshPlayButton();
+    }
+
+    // Play needs enough coins for the stake, unless it's rejoining a match
+    // already paid for.
+    private void RefreshPlayButton()
+    {
+        var wallet = Services.Wallet;
+        bool canAfford = wallet == null || wallet.CanAffordMatch || matchInProgress != null;
+        playButton.interactable = playAllowed && canAfford;
+
+        if (stakeText != null)
+        {
+            stakeText.text = wallet == null || !wallet.Loaded || wallet.Stake <= 0 || matchInProgress != null ? ""
+                : string.Format(canAfford ? stakeFormat : shortFormat, wallet.Stake);
+        }
+    }
+
+    // The server sends REMOVED if you couldn't cover the stake when the match
+    // started. That arrives here, on the matchmaking screen: go back home.
+    private void OnMatchState(long opCode, string json)
+    {
+        if (opCode != UnoOpCodes.Removed)
+            return;
+        var removed = JsonUtility.FromJson<MatchRemovedMsg>(json);
+        if (removed?.reason != RemovedReasons.NotEnoughCoins)
+            return;
+
+        if (screenFlow == null)
+            screenFlow = FindObjectOfType<ScreenFlow>();
+        if (screenFlow != null)
+            screenFlow.ShowLobby();
+        ShowSearching(false);
+        SetInteractable(true);
+        SetStatus("Not enough coins for that match");
+        _ = Services.Wallet?.RefreshAsync();
     }
 
     private void ShowSearching(bool value)

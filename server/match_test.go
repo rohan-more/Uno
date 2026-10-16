@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"math/rand/v2"
+	"reflect"
 	"testing"
 )
 
@@ -174,5 +175,31 @@ func TestQuickMatch_IsNeverListedForMatchmaking(t *testing.T) {
 	}
 	if label.Open != 0 {
 		t.Error("a quick match should never be offered to other players")
+	}
+}
+
+func TestStoredMatchConfig_ReadsInFriendlyUnits(t *testing.T) {
+	def := DefaultMatchConfig()
+
+	// Writing the defaults out and reading them back changes nothing.
+	if got := def.stored().config(); !reflect.DeepEqual(got, def) {
+		t.Errorf("round trip changed the config:\n got %+v\nwant %+v", got, def)
+	}
+
+	// A console edit with decimals, leaving the other fields out.
+	stored := def.stored()
+	if err := json.Unmarshal([]byte(`{"turnSeconds": 12, "botThinkSeconds": 1.25, "botJoinAtSecondsLeft": [6, 2.5]}`), &stored); err != nil {
+		t.Fatal(err)
+	}
+	got := stored.config()
+
+	if got.TurnMs != 12000 || got.BotThinkMs != 1250 {
+		t.Errorf("turn %d ms, bot think %d ms; want 12000 and 1250", got.TurnMs, got.BotThinkMs)
+	}
+	if !reflect.DeepEqual(got.BotJoinAtMsLeft, []int{6000, 2500}) {
+		t.Errorf("bot marks = %v, want [6000 2500]", got.BotJoinAtMsLeft)
+	}
+	if got.LobbyCountdownMs != def.LobbyCountdownMs || got.PostGameCloseMs != def.PostGameCloseMs {
+		t.Error("fields left out of the object should keep their defaults")
 	}
 }

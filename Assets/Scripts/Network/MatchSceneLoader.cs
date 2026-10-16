@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -11,17 +12,26 @@ using UnityEngine.SceneManagement;
 public class MatchSceneLoader : MonoBehaviour
 {
     [SerializeField] private string matchSceneName = "MatchScene";
-    [SerializeField] private string homeSceneName = "Boot";
+    [SerializeField] private string homeSceneName = "Lobby";
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    [Tooltip("Open the table this long before the first turn, so it appears just as play starts.")]
+    [SerializeField] private float sceneLoadAllowance = 0.5f;
 
-    private void OnEnable()
+    private bool loading;
+
+    private static IConnectionService Connection => Services.Connection;
+
+    // Start, not OnEnable: by then every Awake has run, so NakamaConnection exists
+    private void Start()
     {
         if (Connection != null)
             Connection.OnMatchState += HandleMatchState;
+        else
+            Debug.LogError("MatchSceneLoader found no NakamaConnection: it won't hear the deal, " +
+                           "so the match scene will never open.");
     }
 
-    private void OnDisable()
+    private void OnDestroy()
     {
         if (Connection != null)
             Connection.OnMatchState -= HandleMatchState;
@@ -32,10 +42,27 @@ public class MatchSceneLoader : MonoBehaviour
         if (opCode != UnoOpCodes.GameState)
             return;
 
-        if (SceneManager.GetActiveScene().name == matchSceneName)
-            return; // already there; this is just a resync
+        if (SceneManager.GetActiveScene().name == matchSceneName || loading)
+            return; // already there or on the way; this is just a resync
 
+        // The server pauses before the first turn so everyone sees the full
+        // table of players: spend that pause on the matchmaking screen, not at
+        // the table. Rejoining mid-match has no pause and goes straight in.
+        var state = JsonUtility.FromJson<GameStateMsg>(json);
+        float wait = Mathf.Max(0f, state != null ? state.startsInMs / 1000f - sceneLoadAllowance : 0f);
+        Debug.Log($"[SCENE] Deal received; opening {matchSceneName} in {wait:0.0} s");
+        StartCoroutine(LoadMatchScene(wait));
+    }
+
+    private IEnumerator LoadMatchScene(float wait)
+    {
+        loading = true;
+        if (wait > 0f)
+            yield return new WaitForSeconds(wait);
+
+        Debug.Log($"[SCENE] Opening {matchSceneName}");
         SceneManager.LoadScene(matchSceneName);
+        loading = false;
     }
 
     /// <summary>Back to the home screen, e.g. after the results screen.</summary>

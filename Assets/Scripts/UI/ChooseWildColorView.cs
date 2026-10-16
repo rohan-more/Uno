@@ -20,25 +20,25 @@ public class ChooseWildColorView : MonoBehaviour
         redButton.onClick.AddListener((() =>
         {
             actionBus.RaiseCardColor(CardColor.Red);
-            PopupManager.Instance.CloseActive();
+            Services.Popups.CloseActive();
         }));
         
         blueButton.onClick.AddListener((() =>
         {
             actionBus.RaiseCardColor(CardColor.Blue);
-            PopupManager.Instance.CloseActive();
+            Services.Popups.CloseActive();
         }));
         
         yellowButton.onClick.AddListener((() =>
         {
             actionBus.RaiseCardColor(CardColor.Yellow);
-            PopupManager.Instance.CloseActive();
+            Services.Popups.CloseActive();
         }));
         
         greenButton.onClick.AddListener((() =>
         {
             actionBus.RaiseCardColor(CardColor.Green);
-            PopupManager.Instance.CloseActive();
+            Services.Popups.CloseActive();
         }));
     }
 

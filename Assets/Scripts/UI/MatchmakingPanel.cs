@@ -22,8 +22,9 @@ public class MatchmakingPanel : MonoBehaviour
     [SerializeField] private Slot[] slots = new Slot[4];
 
 
+    private static AvatarLibrary avatars => Services.Assets.Avatars;
+
     [Header("Look")]
-    [SerializeField] private AvatarLibrary avatars;
     [SerializeField] private string searchingLabel = "Searching…";
     [SerializeField] private int maxNameLength = 12;
 
@@ -61,8 +62,8 @@ public class MatchmakingPanel : MonoBehaviour
 
     private void OnDisable()
     {
-        if (_subscribed && NakamaConnection.Instance != null)
-            NakamaConnection.Instance.OnMatchState -= HandleMatchState;
+        if (_subscribed && Services.Connection != null)
+            Services.Connection.OnMatchState -= HandleMatchState;
 
         _subscribed = false;
     }
@@ -73,10 +74,10 @@ public class MatchmakingPanel : MonoBehaviour
     /// </summary>
     private void TrySubscribe()
     {
-        if (_subscribed || !listenToServer || NakamaConnection.Instance == null)
+        if (_subscribed || !listenToServer || Services.Connection == null)
             return;
 
-        NakamaConnection.Instance.OnMatchState += HandleMatchState;
+        Services.Connection.OnMatchState += HandleMatchState;
         _subscribed = true;
     }
 
@@ -121,7 +122,7 @@ public class MatchmakingPanel : MonoBehaviour
     /// <summary>Your seat number, or 0 if you can't be found in the list.</summary>
     private int FindMySeat(LobbyStateMsg state)
     {
-        var myUserId = NakamaConnection.Instance != null ? NakamaConnection.Instance.UserId : null;
+        var myUserId = Services.Connection != null ? Services.Connection.UserId : null;
         if (string.IsNullOrEmpty(myUserId))
             return 0;
 

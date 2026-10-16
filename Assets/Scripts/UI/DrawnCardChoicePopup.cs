@@ -49,7 +49,7 @@ public class DrawnCardChoicePopup : PopupView
     private void Answer(Action answer)
     {
         choice = null;
-        PopupManager.Instance.CloseActive();
+        Services.Popups.CloseActive();
         answer?.Invoke();
     }
 }

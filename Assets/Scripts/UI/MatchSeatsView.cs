@@ -41,7 +41,7 @@ public class MatchSeatsView : MonoBehaviour
     }
 
     [SerializeField] private MatchPresenter presenter;
-    [SerializeField] private AvatarLibrary avatars;
+    private static AvatarLibrary avatars => Services.Assets.Avatars;
 
     [Tooltip("Seat panels in turn order: 0 is you, 1 is the player after you.")]
     [SerializeField] private SeatPanel[] panels = new SeatPanel[4];
@@ -69,7 +69,7 @@ public class MatchSeatsView : MonoBehaviour
         presenter.OnCardPlayed += _ => Refresh();
         presenter.OnCardsDrawn += HandleCardsDrawn;
         presenter.OnTurnStarted += HandleTurnStarted;
-        presenter.OnPlayerFinished += (_, __) => Refresh();
+        presenter.OnGameOver += _ => Refresh();
         presenter.OnPlayerConnection += (_, __) => Refresh();
         presenter.OnSeatGivenToBot += _ => Refresh();
     }
@@ -101,7 +101,8 @@ public class MatchSeatsView : MonoBehaviour
         if (state?.Seats == null || state.Seats.Length == 0)
             return;
 
-        var active = state.IsOver ? null : PanelFor(state, state.CurrentSeat);
+        // No ring before the first turn: nobody is on the clock yet
+        var active = state.IsOver || !state.HasStarted ? null : PanelFor(state, state.CurrentSeat);
         var seat = state.SeatAt(state.CurrentSeat);
         if (seat != null && seat.HasFinished)
             active = null;

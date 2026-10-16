@@ -65,7 +65,7 @@ func TestBuildGameState_ShowsOnlyYourHand(t *testing.T) {
 			if gs.CardCount != game.HandSize {
 				t.Errorf("seat %d: seat %d count = %d, want %d", seat, i, gs.CardCount, game.HandSize)
 			}
-			if gs.Name != s.seats[i].name || gs.Kind != s.seats[i].kind {
+			if gs.Name != s.seats[i].name || gs.Kind != publicKind(s.seats[i].kind) {
 				t.Errorf("seat %d: seat %d = %+v, does not match the table", seat, i, gs)
 			}
 		}

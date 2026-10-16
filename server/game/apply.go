@@ -31,7 +31,6 @@ const (
 	EvCardsDrawn       EventType = "CARDS_DRAWN"
 	EvDirectionChanged EventType = "DIRECTION_CHANGED"
 	EvTurnChanged      EventType = "TURN_CHANGED"
-	EvPlayerFinished   EventType = "PLAYER_FINISHED"
 	EvGameOver         EventType = "GAME_OVER"
 )
 
@@ -40,12 +39,12 @@ const (
 // only send them to the drawing player and send a count to everyone else.
 type Event struct {
 	Type    EventType
-	Seat    int    // who it happened to (the player, the new current seat...)
-	Card    Card   // EvCardPlayed
-	Cards   []Card // EvCardsDrawn
-	Color   Color  // EvCardPlayed: the active color after the play
-	Place   int    // EvPlayerFinished: 1 = first to finish
-	Ranking []int  // EvGameOver: seats in finishing order
+	Seat    int      // who it happened to (the player, the new current seat, the winner)
+	Card    Card     // EvCardPlayed
+	Cards   []Card   // EvCardsDrawn
+	Color   Color    // EvCardPlayed: the active color after the play
+	Ranking []int    // EvGameOver: seats in place order
+	Results []Result // EvGameOver: each seat's place, cards left and penalty, in place order
 }
 
 var (
@@ -164,17 +163,10 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	}
 	events := []Event{{Type: EvCardPlayed, Seat: seat, Card: card, Color: s.ActiveColor}}
 
+	// The first empty hand wins and ends the game at once: the card's effect
+	// (a Draw Two, say) doesn't happen.
 	if len(s.Players[seat].Hand) == 0 {
-		events = append(events, s.finish(seat))
-		if s.inGameCount() == 1 {
-			for last := range s.Players {
-				if s.InGame(last) {
-					events = append(events, s.finish(last))
-				}
-			}
-			return append(events, Event{Type: EvGameOver, Ranking: append([]int(nil), s.Ranking...)}), nil
-		}
-		// Otherwise the game goes on, and the card's effect below still applies.
+		return append(events, s.end(seat)), nil
 	}
 
 	step := 1
@@ -187,10 +179,8 @@ func (s *GameState) playCard(seat, cardID int, chosen Color) ([]Event, error) {
 	case Reverse:
 		s.Direction = -s.Direction
 		events = append(events, Event{Type: EvDirectionChanged, Seat: seat})
-		// With two players left, Reverse acts as Skip: the same player goes
-		// again. If the player who reversed just finished, there's nobody to
-		// "go again", so play simply continues in the new direction.
-		if s.inGameCount() == 2 && s.InGame(seat) {
+		// With two players, Reverse acts as Skip: the same player goes again.
+		if len(s.Players) == 2 {
 			step = 2
 		}
 	case DrawTwo:
@@ -235,13 +225,6 @@ func (s *GameState) pass() ([]Event, error) {
 		return nil, ErrCannotPass
 	}
 	return []Event{s.advance(1)}, nil
-}
-
-// finish gives seat the next finishing place.
-func (s *GameState) finish(seat int) Event {
-	s.Ranking = append(s.Ranking, seat)
-	s.Players[seat].Place = len(s.Ranking)
-	return Event{Type: EvPlayerFinished, Seat: seat, Place: s.Players[seat].Place}
 }
 
 // advance ends the current turn, moving step players in the current direction.

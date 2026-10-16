@@ -49,8 +49,7 @@ public class MatchPresenter : MonoBehaviour
     public event Action<int> OnTurnTimedOut;
     public event Action<int> OnSeatGivenToBot;
     public event Action<int, bool> OnPlayerConnection;
-    public event Action<int, int> OnPlayerFinished; // seat, place
-    public event Action<int[]> OnGameOver;          // seats in finishing order
+    public event Action<int[]> OnGameOver;          // seats in place order; State.Results has the details
     public event Action<int, int> OnTurnExtended;   // seat, turnMs: their clock restarted
 
     /// <summary>The server rejected something we sent. Treat as a client bug.</summary>
@@ -68,7 +67,7 @@ public class MatchPresenter : MonoBehaviour
              "call can't freeze the match.")]
     [SerializeField] private float stepTimeout = 3f;
 
-    [SerializeField] private CardDatabase database;
+    private static CardDatabase database => Services.Assets.Cards;
 
     [Tooltip("Log every server event as it plays, to see where a match stalls.")]
     [SerializeField] private bool logEvents = true;
@@ -87,7 +86,7 @@ public class MatchPresenter : MonoBehaviour
     private bool _busy;
     private float _stepStarted;
 
-    private NakamaConnection Connection => NakamaConnection.Instance;
+    private static IConnectionService Connection => Services.Connection;
 
     private void OnEnable()
     {
@@ -285,6 +284,7 @@ public class MatchPresenter : MonoBehaviour
                 break;
 
             case UnoEventTypes.TurnChanged:
+                State.HasStarted = true;
                 State.CurrentSeat = e.seat;
                 State.TurnMsLeft = e.turnMs;
                 State.PendingDraw = e.pendingDraw;
@@ -309,16 +309,8 @@ public class MatchPresenter : MonoBehaviour
                     seat.Connected = e.connected;
                 break;
 
-            case UnoEventTypes.PlayerFinished:
-                if (seat != null)
-                {
-                    seat.Place = e.place;
-                    seat.CardCount = 0;
-                }
-                break;
-
             case UnoEventTypes.GameOver:
-                State.Ranking = e.ranking ?? new int[0];
+                State.ApplyResults(e.ranking, e.results, e.stake, e.pot);
                 break;
         }
     }
@@ -377,10 +369,6 @@ public class MatchPresenter : MonoBehaviour
                 OnPlayerConnection?.Invoke(e.seat, e.connected);
                 break;
 
-            case UnoEventTypes.PlayerFinished:
-                OnPlayerFinished?.Invoke(e.seat, e.place);
-                break;
-
             case UnoEventTypes.GameOver:
                 OnGameOver?.Invoke(State.Ranking);
                 break;
@@ -434,6 +422,13 @@ public class MatchPresenter : MonoBehaviour
     {
         if (Connection != null)
             await Connection.SendMatchStateAsync(UnoOpCodes.ExtendTurn);
+    }
+
+    /// <summary>Quits the match: a bot takes the seat at once and REMOVED (LEFT) comes back.</summary>
+    public async Task LeaveAsync()
+    {
+        if (Connection != null)
+            await Connection.SendMatchStateAsync(UnoOpCodes.LeaveMatch);
     }
 
     /// <summary>Asks for a fresh snapshot, e.g. after an error or a missed batch.</summary>

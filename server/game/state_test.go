@@ -118,30 +118,21 @@ func TestPickStartCard_NoNumberCard(t *testing.T) {
 func TestNextSeat(t *testing.T) {
 	tests := []struct {
 		players, direction, from, step, want int
-		finished                             []int // seats that already finished
 	}{
-		{4, 1, 0, 1, 1, nil},
-		{4, 1, 3, 1, 0, nil},  // wraps forward
-		{4, -1, 0, 1, 3, nil}, // wraps backward: the negative % case
-		{4, 1, 3, 2, 1, nil},  // skip
-		{4, -1, 1, 2, 3, nil},
-		{3, -1, 0, 2, 1, nil},
-		{2, 1, 0, 2, 0, nil}, // two players: skip comes back to you
-		{2, -1, 1, 1, 0, nil},
-		{4, 1, 0, 1, 2, []int{1}},    // finished seats are skipped
-		{4, 1, 0, 2, 3, []int{1}},    // and don't count for Skip
-		{4, -1, 0, 1, 2, []int{3}},   // backward too
-		{4, 1, 1, 1, 3, []int{1, 2}}, // from a seat that just finished
-		{4, 1, 0, 2, 0, []int{1, 2}}, // two left: skip comes back to you
+		{4, 1, 0, 1, 1},
+		{4, 1, 3, 1, 0},  // wraps forward
+		{4, -1, 0, 1, 3}, // wraps backward: the negative % case
+		{4, 1, 3, 2, 1},  // skip
+		{4, -1, 1, 2, 3},
+		{3, -1, 0, 2, 1},
+		{2, 1, 0, 2, 0}, // two players: skip comes back to you
+		{2, -1, 1, 1, 0},
 	}
 	for _, tt := range tests {
 		s := &GameState{Players: make([]Player, tt.players), Direction: tt.direction}
-		for i, seat := range tt.finished {
-			s.Players[seat].Place = i + 1
-		}
 		if got := s.nextSeat(tt.from, tt.step); got != tt.want {
-			t.Errorf("%d players, dir %d, finished %v: nextSeat(%d, %d) = %d, want %d",
-				tt.players, tt.direction, tt.finished, tt.from, tt.step, got, tt.want)
+			t.Errorf("%d players, dir %d: nextSeat(%d, %d) = %d, want %d",
+				tt.players, tt.direction, tt.from, tt.step, got, tt.want)
 		}
 	}
 }

@@ -8,10 +8,10 @@ deals the cards, decides what is legal and tells each client only what that
 player is allowed to see.
 
 > **Status: playable, in progress.** A full four-player match runs end to end
-> over the network: login, matchmaking, lobbies with bots, dealing, turns with an
-> 8-second timer, bots taking over absent players, and a match scene that plays
-> it all out. A results screen, rematch and deployment are next; see the
-> [roadmap](#roadmap).
+> over the network: a loading screen, login, matchmaking, lobbies with bots,
+> dealing, turns with an 8-second timer, bots quietly taking over absent players,
+> reconnecting, matches played for coin stakes, and a results screen. Rematch
+> and deployment are next; see the [roadmap](#roadmap).
 
 <!-- TODO: demo.gif — four windows finding each other and filling a lobby -->
 
@@ -31,6 +31,16 @@ player is allowed to see.
   simulations.
 - **Games are reproducible.** Every shuffle comes from a seeded generator, so a
   seed plus the list of actions replays a match exactly.
+- **Coins can't be lost or paid twice.** Every match is played for a stake, paid
+  out 60/30/10 by place. The stakes are held in an escrow record that's created
+  in the same database transaction that takes them, and deleted in the same one
+  that pays out or refunds, so a crash can't land in between. Records left after
+  a restart are refunded on startup.
+- **Bots are disguised.** Nobody can tell a bot from a person, including when a
+  bot quietly takes over a player who left, under their name and avatar.
+- **Free coins rescue, they don't refill.** Below one stake, a 4-hour wait tops
+  you up to 100, automatically. Anything above that is only ever won, so losing
+  costs something.
 - **The client plays events, it doesn't simulate.** A presenter applies each
   server event to the client's view of the table, then hands it to the UI one
   at a time and waits for its animation, so a burst of bot moves never
@@ -42,16 +52,16 @@ player is allowed to see.
 Unity client (C#)                      Nakama server (Go plugin)
 ─────────────────                      ─────────────────────────
 NakamaConnection  ──── RPC ──────────▶ find_match / quick_match /
-       │                                current_match
+       │                                current_match / get_wallet
        │          ──── socket ───────▶ match handler: 4 seats, lobby
        │                                countdown, bots, turn timer,
-       │                                seat takeover
+       │                                seat takeover, stakes
  LobbyView                                        │
  MatchmakingPanel ◀─── LOBBY_STATE ───────────────┤
  MatchPresenter   ◀─── GAME_STATE, EVENTS, ───────┘
    ├─ MatchView        ERROR, REMOVED             │
-   └─ MatchSeatsView                   game/ — pure Uno rules,
-                                       no Nakama imports
+   ├─ MatchSeatsView                   game/ — pure Uno rules,
+   └─ ResultsView                      no Nakama imports
 ```
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — what every script does, and how a match
@@ -66,7 +76,7 @@ NakamaConnection  ──── RPC ──────────▶ find_match 
 | Client | Unity 2022.3 (URP), C#, TextMeshPro, DOTween |
 | Server | Go 1.26 plugin for Nakama 3.40 |
 | Infra | Docker Compose, PostgreSQL 16 |
-| Tests | `go test`: 87 cases covering rules, deck, bots, lobby, turn timeouts, seat takeover and message visibility |
+| Tests | `go test`: 126 cases covering rules, ranking, deck, bots, lobby, turn timeouts, seat takeover, message visibility, wallet, free coins and stakes |
 
 ## Run it
 
@@ -77,11 +87,18 @@ docker compose up -d --build
 ```
 
 The API is then on `localhost:7450` and the Nakama console on
-http://localhost:7451 (admin / password). Open the project in Unity, load
-`Assets/Scenes/Boot.unity` and press Play.
+http://localhost:7451 (admin / password). Run the `reset_config` RPC once from
+the console's API Explorer, so the tunables appear under Storage → `config`.
+Open the project in Unity, load `Assets/Scenes/Startup.unity` and press Play.
+(Pressing Play in another scene goes through Startup first.)
 
 To skip the lobby and play three bots straight away, tick **Instant Match** on
-the `Nakama` object in the Boot scene.
+the `Nakama` object in the Startup scene. Those quick matches are free; real
+matches cost a stake.
+
+**F1** opens testing tools while the server runs with `UNO_DEBUG_TOOLS=true`
+(set in `server/local.yml`): drop the connection, grant or take coins, top up
+free coins, and make any player win now or hold a single Wild.
 
 To test multiplayer on one machine, build for Windows and start the executable
 several times: each window claims its own profile and logs in as a different
@@ -106,14 +123,18 @@ cd server && go test ./...
 - [x] Draw deck, with a play-or-keep choice for a playable drawn card
 - [x] Choice countdowns that answer for you on timeout, and owed +2/+4
       cards taken automatically
-- [ ] Results screen and rematch
+- [x] Leaving, reconnecting and rejoining a match in progress; disguised bots
+- [x] Coins: starting coins, a free-coins rescue, stakes, payouts by place,
+      escrow and refunds
+- [x] Results screen
+- [ ] Rematch, stake tiers
 - [ ] Stronger bot, deployment
 
 ## Engineering notes
 
 **Tests that earn their place.** The rules are checked by 300 random full games
 that verify, after every single move, that all 108 cards still exist exactly
-once and that no finished player is ever given a turn. To confirm the tests
+once, and that every game ends with an empty-handed winner and every seat ranked. To confirm the tests
 actually catch regressions, I broke the code on purpose in a dozen ways (turn
 order, stacking, the discard reshuffle, the negative modulo in seat order) and
 required each one to fail a test. Two mutations survived, which showed up real

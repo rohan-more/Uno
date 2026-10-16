@@ -2,15 +2,19 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Popups for the current scene, by way of Services.Popups.</summary>
 public interface IPopupService
 {
     void Show(PopupType type, object context = null, Action onCompleted = null);
     void CloseActive();
 }
+
+/// <summary>
+/// Shows one popup at a time from its prefab list. One per scene that needs
+/// popups; it registers itself as Services.Popups and leaves with the scene.
+/// </summary>
 public class PopupManager : MonoBehaviour, IPopupService
 {
-    public static IPopupService Instance { get; private set; }
-
     [SerializeField] private List<PopupView> popupPrefabs;
 
     private readonly Dictionary<PopupType, PopupView> prefabLookup = new();
@@ -18,13 +22,15 @@ public class PopupManager : MonoBehaviour, IPopupService
 
     private void Awake()
     {
-        if (Instance != null)
+        // Services.Popups is an interface, so "!= null" can't see that the
+        // manager from a previous scene load has been destroyed: ask Unity instead.
+        if (Services.Popups is PopupManager existing && existing != null && existing != this)
         {
             Destroy(gameObject);
             return;
         }
 
-        Instance = this;
+        Services.Register(this);
 
         foreach (var prefab in popupPrefabs)
         {
@@ -58,6 +64,11 @@ public class PopupManager : MonoBehaviour, IPopupService
                 activePopup = null;
             }
         );
+    }
+
+    private void OnDestroy()
+    {
+        Services.Unregister(this);
     }
 
     public void CloseActive()

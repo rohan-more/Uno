@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -15,7 +16,7 @@ public class MatchView : MonoBehaviour
 {
     [SerializeField] private MatchPresenter presenter;
     [SerializeField] private MatchSeatsView seatsView;
-    [SerializeField] private CardDatabase database;
+    private static CardDatabase database => Services.Assets.Cards;
     [SerializeField] private PlayerActionBus actionBus;
 
     [Header("Table")]
@@ -27,8 +28,6 @@ public class MatchView : MonoBehaviour
     [Header("Draw deck")]
     [Tooltip("Optional: the face-down deck. Draws fly from it (or from CardProxyView's Deck seat point if unset).")]
     [SerializeField] private DrawPileView drawPile;
-    [Tooltip("Back shown on cards flying from the deck.")]
-    [SerializeField] private Sprite cardBackSprite;
     [Tooltip("Roughly how long a whole draw takes to animate, however many cards.")]
     [SerializeField] private float drawDuration = 0.9f;
 
@@ -60,6 +59,14 @@ public class MatchView : MonoBehaviour
     [SerializeField] private TMP_Text removedText;
     [SerializeField] private float removedReturnDelay = 3f;
 
+    [Header("Leaving (optional)")]
+    [Tooltip("Quits the match after asking with the ConfirmAction popup. A bot takes your seat at once.")]
+    [SerializeField] private Button leaveButton;
+
+    [Header("Connection (optional)")]
+    [Tooltip("Shown while the connection is lost and the client is reconnecting.")]
+    [SerializeField] private GameObject reconnectingIndicator;
+
     // A move we sent that the server hasn't answered yet; blocks double sends
     private bool awaitingServer;
 
@@ -87,6 +94,9 @@ public class MatchView : MonoBehaviour
 
     private void OnEnable()
     {
+        if (drawPile != null)
+            drawPile.SetCardBack(database.CardBack);
+
         presenter.OnSnapshot += HandleSnapshot;
         presenter.OnCardPlayed += HandleCardPlayed;
         presenter.OnCardsDrawn += HandleCardsDrawn;
@@ -96,7 +106,6 @@ public class MatchView : MonoBehaviour
         presenter.OnTurnTimedOut += CompleteStep;
         presenter.OnSeatGivenToBot += CompleteStep;
         presenter.OnPlayerConnection += HandlePlayerConnection;
-        presenter.OnPlayerFinished += HandlePlayerFinished;
         presenter.OnGameOver += HandleGameOver;
         presenter.OnError += HandleError;
         presenter.OnRemoved += HandleRemoved;
@@ -108,6 +117,17 @@ public class MatchView : MonoBehaviour
 
         if (passButton != null)
             passButton.onClick.AddListener(Pass);
+
+        if (leaveButton != null)
+            leaveButton.onClick.AddListener(LeavePressed);
+
+        if (Services.Connection != null)
+        {
+            Services.Connection.OnDisconnected += HandleConnectionLost;
+            Services.Connection.OnReconnected += HandleReconnected;
+            Services.Connection.OnMatchLost += HandleMatchLost;
+        }
+        ShowReconnecting(Services.Connection != null && Services.Connection.IsReconnecting);
     }
 
     private void OnDisable()
@@ -121,7 +141,6 @@ public class MatchView : MonoBehaviour
         presenter.OnTurnTimedOut -= CompleteStep;
         presenter.OnSeatGivenToBot -= CompleteStep;
         presenter.OnPlayerConnection -= HandlePlayerConnection;
-        presenter.OnPlayerFinished -= HandlePlayerFinished;
         presenter.OnGameOver -= HandleGameOver;
         presenter.OnError -= HandleError;
         presenter.OnRemoved -= HandleRemoved;
@@ -133,6 +152,16 @@ public class MatchView : MonoBehaviour
 
         if (passButton != null)
             passButton.onClick.RemoveListener(Pass);
+
+        if (leaveButton != null)
+            leaveButton.onClick.RemoveListener(LeavePressed);
+
+        if (Services.Connection != null)
+        {
+            Services.Connection.OnDisconnected -= HandleConnectionLost;
+            Services.Connection.OnReconnected -= HandleReconnected;
+            Services.Connection.OnMatchLost -= HandleMatchLost;
+        }
     }
 
     // ---- presenter events ----
@@ -244,7 +273,7 @@ public class MatchView : MonoBehaviour
             // Your own cards fly face up; everyone else's stay hidden
             var sprite = drawn.Seat == State.YourSeat && startCount + i < State.Hand.Count
                 ? FrontSprite(State.Hand[startCount + i])
-                : cardBackSprite;
+                : database.CardBack;
 
             bool landed = false;
             if (drawPile != null)
@@ -282,7 +311,7 @@ public class MatchView : MonoBehaviour
         RefreshControls();
 
         bool done = false;
-        cardProxy.Fly(cardBackSprite, drawPile.Point, drawnCardHover, 1f, () => done = true);
+        cardProxy.Fly(database.CardBack, drawPile.Point, drawnCardHover, 1f, () => done = true);
         drawPile.SetCount(State.DeckCount);
         while (!done)
             yield return null;
@@ -354,7 +383,7 @@ public class MatchView : MonoBehaviour
         if (turn.Seat != State.YourSeat && pendingWild != null)
         {
             pendingWild = null;
-            PopupManager.Instance.CloseActive();
+            Services.Popups.CloseActive();
         }
 
         RefreshControls();
@@ -363,17 +392,33 @@ public class MatchView : MonoBehaviour
 
     private void HandlePlayerConnection(int seat, bool connected) => presenter.StepComplete();
 
-    private void HandlePlayerFinished(int seat, int place)
-    {
-        RefreshHand(seat);
-        presenter.StepComplete();
-    }
-
     private void HandleGameOver(int[] ranking)
     {
         RefreshControls();
-        Debug.Log($"Game over: {string.Join(", ", ranking)}");
+        foreach (var r in presenter.State.Results)
+            LogResult(r);
         presenter.StepComplete();
+    }
+
+    // One line per seat, with the cards and their points, recounted here so a
+    // wrong server total shows up as a warning.
+    private void LogResult(ResultMsg r)
+    {
+        var cards = new List<string>();
+        int recount = 0;
+        foreach (var card in r.cards ?? new CardMsg[0])
+        {
+            var def = database.GetById(card.defId);
+            int points = def != null ? def.Penalty : 0;
+            recount += points;
+            cards.Add($"{card.defId}={points}");
+        }
+
+        var line = $"Game over: place {r.place}, seat {r.seat}, {r.coins} coins, {r.cardsLeft} cards, {r.penalty} points [{string.Join(", ", cards)}]";
+        if (recount != r.penalty || cards.Count != r.cardsLeft)
+            Debug.LogWarning($"{line}: recounted {recount} points in {cards.Count} cards");
+        else
+            Debug.Log(line);
     }
 
     private void HandleError(MatchErrorMsg error)
@@ -394,15 +439,18 @@ public class MatchView : MonoBehaviour
         hoveringCard = null;
         StopAllCoroutines();
         cardProxy.HideImmediate();
-        PopupManager.Instance?.CloseActive();
+        Services.Popups?.CloseActive();
         RefreshControls();
 
         if (removedPanel != null)
             removedPanel.SetActive(true);
         if (removedText != null)
-            removedText.text = reason == RemovedReasons.Disconnected
-                ? "You were disconnected for too long. A bot took your seat."
-                : "You missed too many turns. A bot took your seat.";
+            removedText.text = reason switch
+            {
+                RemovedReasons.Left => "You left the match.",
+                RemovedReasons.NotEnoughCoins => "You don't have enough coins for this match.",
+                _ => "You missed too many turns. A bot took your seat.",
+            };
 
         StartCoroutine(ReturnHomeAfterDelay());
     }
@@ -410,15 +458,83 @@ public class MatchView : MonoBehaviour
     private IEnumerator ReturnHomeAfterDelay()
     {
         yield return new WaitForSeconds(removedReturnDelay);
+        ReturnHome();
+    }
 
-        if (NakamaConnection.Instance != null)
-            _ = NakamaConnection.Instance.LeaveMatchAsync();
+    private void ReturnHome()
+    {
+        if (Services.Connection != null)
+            _ = Services.Connection.LeaveMatchAsync();
 
         var loader = FindObjectOfType<MatchSceneLoader>();
         if (loader != null)
             loader.ReturnHome();
         else
             Debug.LogError("No MatchSceneLoader to go home with");
+    }
+
+    // ---- leaving ----
+
+    private void LeavePressed()
+    {
+        if (removed || Services.Popups == null)
+            return;
+
+        // Replaces any choice popup that's up; the turn timer keeps running meanwhile
+        Services.Popups.Show(PopupType.ConfirmAction, new ConfirmChoice
+        {
+            Message = "You'll lose the coins you wagered on it.",
+            ConfirmLabel = "Leave",
+            OnConfirm = LeaveConfirmed,
+            OnCancel = RefreshControls, // reopens Play / Keep if Leave replaced it
+        });
+    }
+
+    private void LeaveConfirmed()
+    {
+        if (removed)
+            return;
+
+        _ = presenter.LeaveAsync();
+        StartCoroutine(LeaveFallback());
+    }
+
+    // REMOVED (LEFT) normally comes straight back and sends us home. If it
+    // doesn't, e.g. the connection is down, go home anyway; the seat then times
+    // out to a bot like any abandoned seat.
+    private IEnumerator LeaveFallback()
+    {
+        yield return new WaitForSeconds(3f);
+        if (!removed)
+            ReturnHome();
+    }
+
+    // ---- connection ----
+
+    private void HandleConnectionLost(string reason)
+    {
+        ShowReconnecting(true);
+        RefreshControls();
+    }
+
+    // The server sends a fresh GAME_STATE once we've rejoined, which redraws everything.
+    private void HandleReconnected() => ShowReconnecting(false);
+
+    // Back online but the match is gone (it closed while we were away, or the
+    // server restarted): nothing more will arrive, so go home.
+    private void HandleMatchLost()
+    {
+        if (removed)
+            return;
+        removed = true;
+        Debug.LogWarning("The match ended while we were disconnected; going home");
+        ReturnHome();
+    }
+
+    private void ShowReconnecting(bool show)
+    {
+        if (reconnectingIndicator != null)
+            reconnectingIndicator.SetActive(show);
     }
 
     // ---- input ----
@@ -455,7 +571,7 @@ public class MatchView : MonoBehaviour
             seconds = presenter.TurnSeconds;
         }
 
-        PopupManager.Instance.Show(PopupType.ChooseColor, new PopupCountdown
+        Services.Popups.Show(PopupType.ChooseColor, new PopupCountdown
         {
             TimeoutSeconds = PopupSeconds(seconds),
             OnTimeout = PickRandomColor,
@@ -466,13 +582,13 @@ public class MatchView : MonoBehaviour
     private void PickRandomColor()
     {
         chosenColor = (CardColor)Random.Range((int)CardColor.Red, (int)CardColor.Blue + 1);
-        PopupManager.Instance.CloseActive(); // sends the play, see OnColorPopupClosed
+        Services.Popups.CloseActive(); // sends the play, see OnColorPopupClosed
     }
 
     // Out of time on play-or-keep: keep it
     private void KeepOnTimeout()
     {
-        PopupManager.Instance.CloseActive();
+        Services.Popups.CloseActive();
         Pass();
     }
 
@@ -515,7 +631,9 @@ public class MatchView : MonoBehaviour
 
     private bool OwesCardsWithNoAnswer() => State.PendingDraw > 0 && presenter.PlayableCards().Count == 0;
 
-    private bool CanAct() => !removed && State.IsYourTurn && !awaitingServer && pendingWild == null;
+    // No moves while reconnecting: they'd be dropped, and the snapshot on rejoin redraws everything
+    private bool CanAct() => !removed && (Services.Connection == null || Services.Connection.IsConnected)
+                             && State.IsYourTurn && !awaitingServer && pendingWild == null;
 
     private async void Send(System.Threading.Tasks.Task send)
     {
@@ -566,7 +684,7 @@ public class MatchView : MonoBehaviour
         if (choosing && !choiceOpen)
             OpenDrawnChoice();
         else if (!choosing && choiceOpen)
-            PopupManager.Instance?.CloseActive(); // the turn moved on without an answer
+            Services.Popups?.CloseActive(); // the turn moved on without an answer
 
         if (yourTurnIndicator != null)
             yourTurnIndicator.SetActive(yourTurn);
@@ -579,11 +697,11 @@ public class MatchView : MonoBehaviour
 
     private void OpenDrawnChoice()
     {
-        if (PopupManager.Instance == null)
+        if (Services.Popups == null)
             return;
 
         choiceOpen = true;
-        PopupManager.Instance.Show(PopupType.DrawnCardChoice, new DrawnCardChoice
+        Services.Popups.Show(PopupType.DrawnCardChoice, new DrawnCardChoice
         {
             OnPlay = PlayDrawnCard,
             OnKeep = Pass,

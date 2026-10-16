@@ -23,7 +23,7 @@ public class HudView : MonoBehaviour
 
     private void ShowPopup()
     {
-        PopupManager.Instance.Show(PopupType.ChooseColor);
+        Services.Popups.Show(PopupType.ChooseColor);
     }
 
     private void OnDrawCardClicked()
