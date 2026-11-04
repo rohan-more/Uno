@@ -30,7 +30,8 @@ public class MatchSeatsView : MonoBehaviour
         public GameObject turnHighlight;
 
         [Tooltip("Optional: a Filled (Radial 360) Image around the avatar. Shown on " +
-                 "this player's turn and drains as their time runs out.")]
+                 "this player's turn and drains as their time runs out. Only the Image is " +
+                 "switched off between turns, so it may sit on the avatar's parent.")]
         public Image turnTimer;
 
         [Tooltip("Optional: shown when they finish, e.g. \"1st\".")]
@@ -115,9 +116,10 @@ public class MatchSeatsView : MonoBehaviour
             if (panel?.turnTimer == null)
                 continue;
 
+            // The Image, not its GameObject: the avatar is often a child of the ring
             bool show = panel == active;
-            if (panel.turnTimer.gameObject.activeSelf != show)
-                panel.turnTimer.gameObject.SetActive(show);
+            if (panel.turnTimer.enabled != show)
+                panel.turnTimer.enabled = show;
 
             if (show)
             {
