@@ -848,6 +848,8 @@ GameObject:
   - component: {fileID: 771139323}
   - component: {fileID: 771139322}
   - component: {fileID: 771139324}
+  - component: {fileID: 771139326}
+  - component: {fileID: 771139325}
   m_Layer: 0
   m_Name: GameRoot
   m_TagString: Untagged
@@ -1010,6 +1012,33 @@ MonoBehaviour:
   removedReturnDelay: 3
   leaveButton: {fileID: 727533859}
   reconnectingIndicator: {fileID: 0}
+--- !u!114 &771139325
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 771139318}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cc4d0a2980fce914988b776455a21855, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  music: 2
+--- !u!114 &771139326
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 771139318}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76fe6e510f4a1ae4db4b7233dcec45e9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  presenter: {fileID: 771139322}
+  tickFromSeconds: 3
 --- !u!114 &820517586 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 1213395016510482247, guid: 547e97e4db852524782b10d1e3cce485, type: 3}
