@@ -51,6 +51,10 @@ public class MatchSceneLoader : MonoBehaviour
         var state = JsonUtility.FromJson<GameStateMsg>(json);
         float wait = Mathf.Max(0f, state != null ? state.startsInMs / 1000f - sceneLoadAllowance : 0f);
         Debug.Log($"[SCENE] Deal received; opening {matchSceneName} in {wait:0.0} s");
+
+        // Let the menu music fade out during that pause, so the table opens
+        // quiet and its own track fades in (see SceneMusic)
+        Services.Audio?.PlayMusic(Music.None);
         StartCoroutine(LoadMatchScene(wait));
     }
 

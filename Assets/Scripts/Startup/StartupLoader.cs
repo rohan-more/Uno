@@ -84,6 +84,17 @@ public class StartupLoader : MonoBehaviour
             Label = "Loading your coins…", Weight = 0.25f,
             Run = async _ => await Services.Wallet.RefreshAsync(),
         },
+        new Step
+        {
+            // Never fails the start: without sounds the game just plays silent
+            Label = "Loading sounds…", Weight = 0.10f,
+            Run = async _ =>
+            {
+                if (Services.Audio != null)
+                    await Services.Audio.LoadAsync();
+                return true;
+            },
+        },
     };
 
     private async void RunFrom(int first)
