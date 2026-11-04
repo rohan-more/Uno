@@ -912,10 +912,10 @@ MonoBehaviour:
   presenter: {fileID: 771139322}
   panels:
   - seat: 0
-    avatar: {fileID: 2006950947}
-    nameText: {fileID: 1017922699}
+    avatar: {fileID: 0}
+    nameText: {fileID: 0}
     cardCountText: {fileID: 0}
-    turnHighlight: {fileID: 991984508}
+    turnHighlight: {fileID: 0}
     turnTimer: {fileID: 0}
     placeText: {fileID: 0}
     group: {fileID: 0}
@@ -1136,17 +1136,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: da6273adac51aee4499e80ed4951614c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!1 &991984508 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6231429238286952248, guid: 547e97e4db852524782b10d1e3cce485, type: 3}
-  m_PrefabInstance: {fileID: 7279880883740293824}
-  m_PrefabAsset: {fileID: 0}
 --- !u!114 &991984510 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 4749147984368110474, guid: 547e97e4db852524782b10d1e3cce485, type: 3}
   m_PrefabInstance: {fileID: 7279880883740293824}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 991984508}
+  m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
@@ -1220,7 +1215,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 7d1b4c79b3d61384b9febaf85779a090, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 3ba99be82848b094a94861cf32a4504d, type: 3}
   m_Type: 0
   m_PreserveAspect: 1
   m_FillCenter: 1
@@ -1805,17 +1800,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6f9d277e4e642684eade86d80409a5fe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &2006950947 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7265186669928354627, guid: 547e97e4db852524782b10d1e3cce485, type: 3}
-  m_PrefabInstance: {fileID: 7279880883740293824}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &2129954848
 GameObject:
   m_ObjectHideFlags: 0
@@ -1976,6 +1960,10 @@ PrefabInstance:
       propertyPath: actionBus
       value: 
       objectReference: {fileID: 771139320}
+    - target: {fileID: 2383636758116449808, guid: 547e97e4db852524782b10d1e3cce485, type: 3}
+      propertyPath: presenter
+      value: 
+      objectReference: {fileID: 771139322}
     - target: {fileID: 2573578952719670216, guid: 547e97e4db852524782b10d1e3cce485, type: 3}
       propertyPath: actionBus
       value: 
