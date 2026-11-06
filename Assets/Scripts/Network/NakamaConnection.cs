@@ -234,7 +234,22 @@ public class NakamaConnection : MonoBehaviour, IConnectionService
                 return restored;
 
             if (!restored.IsRefreshExpired)
-                return await _client.SessionRefreshAsync(restored);
+            {
+                try
+                {
+                    return await _client.SessionRefreshAsync(restored);
+                }
+                catch (Exception e)
+                {
+                    // The server can reject a token this client still thinks is
+                    // good: the database was reset, the server came back with new
+                    // signing keys, or the token was already used. Falling through
+                    // to a fresh login is the only way out; without this the saved
+                    // token fails forever and the player can never connect again.
+                    Debug.LogWarning($"Saved session rejected ({e.Message}); logging in again");
+                    ClearSavedSession(deviceId);
+                }
+            }
         }
 
         return await _client.AuthenticateDeviceAsync(deviceId);
@@ -250,6 +265,14 @@ public class NakamaConnection : MonoBehaviour, IConnectionService
         var deviceId = GetOrCreateDeviceId();
         PlayerPrefs.SetString(AuthTokenKey + deviceId, session.AuthToken);
         PlayerPrefs.SetString(RefreshTokenKey + deviceId, session.RefreshToken);
+        PlayerPrefs.Save();
+    }
+
+    /// <summary>Throws away a session the server no longer accepts.</summary>
+    private static void ClearSavedSession(string deviceId)
+    {
+        PlayerPrefs.DeleteKey(AuthTokenKey + deviceId);
+        PlayerPrefs.DeleteKey(RefreshTokenKey + deviceId);
         PlayerPrefs.Save();
     }
 

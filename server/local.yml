@@ -4,7 +4,11 @@ logger:
   level: DEBUG
 
 session:
-  token_expiry_sec: 7200
+  # The refresh token must outlive the session it renews. Nakama's default
+  # refresh expiry is 1 hour, which is SHORTER than this, leaving a window where
+  # a client holds a session it cannot renew and has to log in again.
+  token_expiry_sec: 7200          # 2 hours
+  refresh_token_expiry_sec: 604800 # 7 days
 
 socket:
   max_message_size_bytes: 16384
