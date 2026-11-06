@@ -115,6 +115,11 @@ func (s *GameState) Over() bool {
 	return s.Results != nil
 }
 
+// Def looks up a card's definition, e.g. to see what was just played.
+func (s *GameState) Def(card Card) (CardDef, bool) {
+	return s.cat.Def(card)
+}
+
 // TopCard returns the card on top of the discard pile.
 func (s *GameState) TopCard() Card {
 	return s.Discard[len(s.Discard)-1]

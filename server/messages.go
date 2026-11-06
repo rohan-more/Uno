@@ -13,8 +13,9 @@ const (
 	OpLeaveMatch   int64 = 7
 
 	// client -> server, testing only: refused unless UNO_DEBUG_TOOLS=true
-	OpDebugWin     int64 = 90
-	OpDebugOneCard int64 = 91
+	OpDebugWin      int64 = 90
+	OpDebugOneCard  int64 = 91
+	OpDebugGiveCard int64 = 92
 
 	// server -> client
 	OpLobbyState int64 = 100
@@ -81,6 +82,7 @@ type GameStateMsg struct {
 	DrawnCardID int         `json:"drawnCardId"` // -1 when there is none
 	DeckCount   int         `json:"deckCount"`
 	TurnMsLeft  int         `json:"turnMsLeft"`
+	TurnWaitMs  int         `json:"turnWaitMs,omitempty"` // pause left before that clock starts
 	StartsInMs  int         `json:"startsInMs,omitempty"` // only before the first turn
 	Ranking     []int       `json:"ranking"`
 	Results     []ResultMsg `json:"results,omitempty"` // once the game is over
@@ -110,6 +112,7 @@ type EventMsg struct {
 	Color       string      `json:"color,omitempty"`
 	Direction   int         `json:"direction,omitempty"`
 	TurnMs      int         `json:"turnMs,omitempty"`
+	WaitMs      int         `json:"waitMs,omitempty"` // TURN_CHANGED: pause before the clock starts
 	PendingDraw int         `json:"pendingDraw,omitempty"`
 	Kind        string      `json:"kind,omitempty"`      // SEAT_CONTROL
 	Connected   *bool       `json:"connected,omitempty"` // PLAYER_CONNECTION
@@ -187,7 +190,8 @@ type PlayCardReq struct {
 
 // DebugSeatReq is the body of OpDebugWin and OpDebugOneCard.
 type DebugSeatReq struct {
-	Seat int `json:"seat"`
+	Seat int    `json:"seat"`
+	Card string `json:"card,omitempty"` // OpDebugGiveCard: SKIP, REVERSE, DRAW_TWO, WILD, WILD_DRAW_FOUR
 }
 
 // ---------- helpers ----------

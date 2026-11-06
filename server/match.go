@@ -404,7 +404,7 @@ func (s *MatchState) tickPlaying(ctx context.Context, logger runtime.Logger, nk 
 			return
 		}
 
-		s.beginTurn()
+		s.beginTurn(0) // the pre-match pause was the pause
 		s.broadcastEvents(logger, dispatcher, []EventMsg{s.turnChangedEvent()})
 		logger.WithField("seat", s.game.Current).Info("first turn")
 		return
@@ -493,7 +493,8 @@ func (s *MatchState) applyAction(logger runtime.Logger, dispatcher runtime.Match
 
 // afterAction restarts the timers and broadcasts, once a move has been applied.
 func (s *MatchState) afterAction(logger runtime.Logger, dispatcher runtime.MatchDispatcher, seat int, events []game.Event, prefix []EventMsg) {
-	s.beginTurn()
+	pause := s.pauseAfter(events)
+	s.beginTurn(pause)
 
 	// The coins are decided now so GAME_OVER can carry them; they're paid on
 	// the next loop, which has what it needs to reach the wallets.
@@ -507,6 +508,8 @@ func (s *MatchState) afterAction(logger runtime.Logger, dispatcher runtime.Match
 		switch batch[i].Type {
 		case EvDirectionChanged:
 			batch[i].Direction = s.game.Direction
+		case EvTurnChanged:
+			batch[i].WaitMs = pause
 		case EvGameOver:
 			batch[i].Results = s.resultMsgs()
 			batch[i].Stake = s.stake
@@ -523,13 +526,37 @@ func (s *MatchState) afterAction(logger runtime.Logger, dispatcher runtime.Match
 	}
 }
 
-// beginTurn restarts the clocks for whoever is on turn now. The gap runs first,
-// then the bot's thinking pause, then the turn timer.
-func (s *MatchState) beginTurn() {
+// beginTurn restarts the clocks for whoever is on turn now. The pause runs
+// first, then the bot's thinking pause, then the turn timer.
+func (s *MatchState) beginTurn(pauseMs int) {
 	s.turnTicks = s.cfg.TurnMs / msPerTick
 	s.botThinkTicks = s.cfg.BotThinkMs / msPerTick
-	s.gapTicks = s.cfg.TurnGapMs / msPerTick
+	s.gapTicks = pauseMs / msPerTick
 	s.turnExtended = false
+}
+
+// pauseAfter is how long every client needs to show what a move did before
+// the next turn starts: a beat after any move, longer after a special card so
+// its banner can play, and time for each drawn card to fly in. The server sets
+// the pace and the clients' animations fit inside it, so no client falls
+// behind the turn clock.
+func (s *MatchState) pauseAfter(events []game.Event) int {
+	ms := s.cfg.TurnGapMs
+	special := false
+	for _, e := range events {
+		switch e.Type {
+		case game.EvCardPlayed:
+			if def, ok := s.game.Def(e.Card); ok && def.Type != game.Number {
+				special = true
+			}
+		case game.EvCardsDrawn:
+			ms += len(e.Cards) * s.cfg.DrawCardMs
+		}
+	}
+	if special {
+		ms += s.cfg.EventPauseMs
+	}
+	return ms
 }
 
 func (s *MatchState) turnChangedEvent() EventMsg {
@@ -613,7 +640,7 @@ func (s *MatchState) handleMessages(ctx context.Context, logger runtime.Logger, 
 				s.giveSeatToBot(ctx, logger, nk, dispatcher, seat, RemovedLeft)
 			}
 
-		case OpDebugWin, OpDebugOneCard:
+		case OpDebugWin, OpDebugOneCard, OpDebugGiveCard:
 			s.handleDebug(ctx, logger, dispatcher, m)
 
 		default:
@@ -656,6 +683,7 @@ func (s *MatchState) buildGameState(seat int) GameStateMsg {
 		DeckCount:   g.Deck.Len(),
 		DrawnCardID: -1,
 		TurnMsLeft:  s.turnTicks * msPerTick,
+		TurnWaitMs:  s.gapTicks * msPerTick,
 		StartsInMs:  s.preMatchTicks * msPerTick,
 		Ranking:     g.Ranking,
 		Results:     s.resultMsgs(),
@@ -988,7 +1016,8 @@ func (s *MatchState) handleExtendTurn(logger runtime.Logger, dispatcher runtime.
 }
 
 // handleDebug rigs the game for testing: DEBUG_WIN makes a seat win now,
-// DEBUG_ONE_CARD leaves a seat one Wild away from winning. Any seat may be
+// DEBUG_ONE_CARD leaves a seat one Wild away from winning, and DEBUG_GIVE_CARD
+// hands a seat a special card to play. Any seat may be
 // chosen, bot or human. Refused unless the server runs with the debug tools on.
 func (s *MatchState) handleDebug(ctx context.Context, logger runtime.Logger, dispatcher runtime.MatchDispatcher, m runtime.MatchData) {
 	if !debugToolsOn(ctx) {
@@ -1016,11 +1045,19 @@ func (s *MatchState) handleDebug(ctx context.Context, logger runtime.Logger, dis
 		return
 	}
 
-	if err := s.game.DebugOneCard(req.Seat); err != nil {
-		s.sendError(logger, dispatcher, m, ErrCodeBadMessage, err.Error())
-		return
+	if m.GetOpCode() == OpDebugGiveCard {
+		if err := s.game.DebugGiveCard(req.Seat, game.CardType(req.Card)); err != nil {
+			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, err.Error())
+			return
+		}
+		logger.WithField("seat", req.Seat).WithField("card", req.Card).Warn("debug: gave a card")
+	} else {
+		if err := s.game.DebugOneCard(req.Seat); err != nil {
+			s.sendError(logger, dispatcher, m, ErrCodeBadMessage, err.Error())
+			return
+		}
+		logger.WithField("seat", req.Seat).Warn("debug: down to one card")
 	}
-	logger.WithField("seat", req.Seat).Warn("debug: down to one card")
 
 	// Hands changed outside normal play, so everyone gets a fresh snapshot.
 	for i := range s.seats {

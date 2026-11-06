@@ -38,7 +38,11 @@ type MatchConfig struct {
 	// Turns
 	TurnMs     int // per turn, before the server plays it safe
 	BotThinkMs int // pause before a bot acts, so moves are watchable
-	TurnGapMs  int // pause after any move, so play does not race
+	TurnGapMs  int // pause after any move, so every client can show it
+
+	// Extra pause so players can take in what happened, on top of TurnGapMs
+	EventPauseMs int // a special card (Skip, Reverse, Draw Two, a wild): time for its banner
+	DrawCardMs   int // per card drawn: time for it to fly into the hand
 
 	// Absent players
 	MissedTurnsForBot int // consecutive timeouts before a bot takes over
@@ -58,6 +62,8 @@ type matchConfigStored struct {
 	TurnSeconds            float64   `json:"turnSeconds"`
 	BotThinkSeconds        float64   `json:"botThinkSeconds"`
 	TurnGapSeconds         float64   `json:"turnGapSeconds"`
+	EventPauseSeconds      float64   `json:"eventPauseSeconds"`
+	PerCardDrawSeconds     float64   `json:"perCardDrawSeconds"`
 	MissedTurnsForBot      int       `json:"missedTurnsForBot"`
 	EmptyLobbyGraceSeconds float64   `json:"emptyLobbyGraceSeconds"`
 	NoHumansCloseSeconds   float64   `json:"noHumansCloseSeconds"`
@@ -73,7 +79,9 @@ func DefaultMatchConfig() MatchConfig {
 		PreMatchMs:        3000,
 		TurnMs:            8000,
 		BotThinkMs:        1200,
-		TurnGapMs:         500,
+		TurnGapMs:         800,
+		EventPauseMs:      1200,
+		DrawCardMs:        250,
 		MissedTurnsForBot: 3,
 		EmptyLobbyGraceMs: 10000,
 		NoHumansCloseMs:   10000,
@@ -97,6 +105,8 @@ func (c MatchConfig) stored() matchConfigStored {
 		TurnSeconds:            seconds(c.TurnMs),
 		BotThinkSeconds:        seconds(c.BotThinkMs),
 		TurnGapSeconds:         seconds(c.TurnGapMs),
+		EventPauseSeconds:      seconds(c.EventPauseMs),
+		PerCardDrawSeconds:     seconds(c.DrawCardMs),
 		MissedTurnsForBot:      c.MissedTurnsForBot,
 		EmptyLobbyGraceSeconds: seconds(c.EmptyLobbyGraceMs),
 		NoHumansCloseSeconds:   seconds(c.NoHumansCloseMs),
@@ -117,6 +127,8 @@ func (s matchConfigStored) config() MatchConfig {
 		TurnMs:            millis(s.TurnSeconds),
 		BotThinkMs:        millis(s.BotThinkSeconds),
 		TurnGapMs:         millis(s.TurnGapSeconds),
+		EventPauseMs:      millis(s.EventPauseSeconds),
+		DrawCardMs:        millis(s.PerCardDrawSeconds),
 		MissedTurnsForBot: s.MissedTurnsForBot,
 		EmptyLobbyGraceMs: millis(s.EmptyLobbyGraceSeconds),
 		NoHumansCloseMs:   millis(s.NoHumansCloseSeconds),
@@ -154,6 +166,8 @@ func sanitize(c, def MatchConfig, logger runtime.Logger) MatchConfig {
 	c.TurnMs = fix("turnSeconds", c.TurnMs, def.TurnMs, false)
 	c.BotThinkMs = fix("botThinkSeconds", c.BotThinkMs, def.BotThinkMs, true)
 	c.TurnGapMs = fix("turnGapSeconds", c.TurnGapMs, def.TurnGapMs, true)
+	c.EventPauseMs = fix("eventPauseSeconds", c.EventPauseMs, def.EventPauseMs, true)
+	c.DrawCardMs = fix("perCardDrawSeconds", c.DrawCardMs, def.DrawCardMs, true)
 	c.MissedTurnsForBot = fix("missedTurnsForBot", c.MissedTurnsForBot, def.MissedTurnsForBot, false)
 	c.EmptyLobbyGraceMs = fix("emptyLobbyGraceSeconds", c.EmptyLobbyGraceMs, def.EmptyLobbyGraceMs, false)
 	c.NoHumansCloseMs = fix("noHumansCloseSeconds", c.NoHumansCloseMs, def.NoHumansCloseMs, false)

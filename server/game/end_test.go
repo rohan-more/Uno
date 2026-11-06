@@ -193,3 +193,43 @@ func TestDebugOneCard_SwapsWhenEveryWildIsHeld(t *testing.T) {
 		t.Errorf("deck = %d, want seat 0's other old card", s.Deck.Len())
 	}
 }
+
+func TestDebugGiveCard_SwapsInThePlayableKind(t *testing.T) {
+	for _, kind := range []CardType{Skip, Reverse, DrawTwo, WildCard, WildDrawFour} {
+		s := newTestGame(t, MaxPlayers, 11)
+		counts := make([]int, MaxPlayers)
+		for i, p := range s.Players {
+			counts[i] = len(p.Hand)
+		}
+
+		if err := s.DebugGiveCard(2, kind); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+
+		found := false
+		for _, c := range s.Players[2].Hand {
+			def, _ := s.cat.Def(c)
+			if def.Type == kind && (kind.IsWild() || def.Color == s.ActiveColor) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: seat 2 should now hold one it can play on %s", kind, s.ActiveColor)
+		}
+		for i, p := range s.Players {
+			if len(p.Hand) != counts[i] {
+				t.Errorf("%s: seat %d's hand changed size", kind, i)
+			}
+		}
+		requireEveryCardOnce(t, allCards(s))
+	}
+}
+
+func TestDebugGiveCard_RefusesNumbersAndNonsense(t *testing.T) {
+	s := newTestGame(t, MaxPlayers, 3)
+	for _, bad := range []CardType{Number, "BANANA"} {
+		if err := s.DebugGiveCard(0, bad); !errors.Is(err, ErrDebug) {
+			t.Errorf("%q: err = %v, want ErrDebug", bad, err)
+		}
+	}
+}

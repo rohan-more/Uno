@@ -128,6 +128,8 @@ reconnect, and in reply to `REQUEST_STATE`:
 - `results` appears once the game is over, as in `GAME_OVER`, so a client that
   rejoins then can still show them.
 - `startsInMs` is only present before the first turn.
+- `turnWaitMs` is what's left of the pause before `turnMsLeft` starts running
+  (see `TURN_CHANGED`).
 - Timers are always **time remaining in milliseconds**, never a clock time, so
   client clock skew does not matter.
 
@@ -143,6 +145,7 @@ reconnect, and in reply to `REQUEST_STATE`:
 | 7 | `LEAVE_MATCH` | `{}` | During play: quit now. A bot takes the seat at once and you get `REMOVED` with `LEFT`. In the lobby, just leave the match |
 | 90 | `DEBUG_WIN` | `{ "seat": 2 }` | **Debug only.** During play: that seat (any, bot or human) wins now, as if it had played its last card |
 | 91 | `DEBUG_ONE_CARD` | `{ "seat": 2 }` | **Debug only.** During play: that seat's hand becomes one Wild; everyone gets a fresh `GAME_STATE` |
+| 92 | `DEBUG_GIVE_CARD` | `{ "seat": 2, "card": "DRAW_TWO" }` | **Debug only.** During play: one of that seat's cards is swapped for a `SKIP`, `REVERSE`, `DRAW_TWO`, `WILD` or `WILD_DRAW_FOUR`, in the colour in play when there is one; hand sizes don't change; everyone gets a fresh `GAME_STATE` |
 
 The debug ops answer `DEBUG_TOOLS_OFF` unless the server runs with
 `UNO_DEBUG_TOOLS=true` (see section 11).
@@ -174,7 +177,7 @@ color for a drawn wild is a second choice in the same turn, so the client sends
 | `CARDS_DRAWN` | `seat, count, cards` | **`cards` only goes to the drawer**; others get `count` |
 | `PLAYER_SKIPPED` | `seat` | Sent with a Skip, so the client can animate it |
 | `DIRECTION_CHANGED` | `direction` | `1` or `-1` |
-| `TURN_CHANGED` | `seat, turnMs, pendingDraw` | `turnMs` is the full turn length, for bots too (they act after `botThinkMs`) |
+| `TURN_CHANGED` | `seat, turnMs, waitMs, pendingDraw` | `turnMs` is the full turn length, for bots too (they act after `botThinkMs`). `waitMs` is the pause before that clock starts, while every client shows the move that led here: the deadline is `waitMs + turnMs` from arrival |
 | `TURN_EXTENDED` | `seat, turnMs` | `EXTEND_TURN` was accepted: that seat's clock restarts at `turnMs` |
 | `TURN_TIMED_OUT` | `seat` | Precedes the automatic draw's events |
 | `PLAYER_CONNECTION` | `seat, connected` | Grey out the nameplate |
@@ -285,13 +288,20 @@ allowed, e.g. `1.2`) and minutes. The server converts them on load.
   "preMatchSeconds": 3,
   "turnSeconds": 8,
   "botThinkSeconds": 1.2,
-  "turnGapSeconds": 0.5,
+  "turnGapSeconds": 0.8,
+  "eventPauseSeconds": 1.2,
+  "perCardDrawSeconds": 0.25,
   "missedTurnsForBot": 3,
   "emptyLobbyGraceSeconds": 10,
   "noHumansCloseSeconds": 10,
   "postGameCloseSeconds": 30
 }
 ```
+
+After every move the server pauses before the next turn, so every client can
+show it: `turnGapSeconds`, plus `eventPauseSeconds` after a special card (Skip,
+Reverse, Draw Two, a wild) for its banner, plus `perCardDrawSeconds` for each
+card drawn. A bot thinks, or a player's clock starts, only after the pause.
 
 **`config` / `economy`**: coins. Read on every wallet request, so edits apply
 at once.

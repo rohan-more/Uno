@@ -108,6 +108,74 @@ func (s *GameState) DebugWin(seat int) ([]Event, error) {
 	return []Event{s.end(seat)}, nil
 }
 
+// DebugGiveCard swaps one card in seat's hand for a card of type t, so special
+// cards can be tried on demand. It prefers one in the colour in play, so it can
+// be played straight away. The card handed back goes wherever the new one came
+// from (the deck, under the discard pile, or another player's hand), so every
+// hand keeps its size. For testing only.
+func (s *GameState) DebugGiveCard(seat int, t CardType) error {
+	if s.Over() {
+		return ErrGameOver
+	}
+	if seat < 0 || seat >= len(s.Players) {
+		return fmt.Errorf("%w: %d", ErrBadSeat, seat)
+	}
+	if !t.valid() || t == Number {
+		return fmt.Errorf("%w: unknown special card %q", ErrDebug, t)
+	}
+	hand := s.Players[seat].Hand
+	if len(hand) == 0 {
+		return fmt.Errorf("%w: empty hand", ErrDebug)
+	}
+
+	// Hand back a number card if there is one, so the rest of the hand stays
+	give := 0
+	for i, c := range hand {
+		if def, _ := s.cat.Def(c); def.Type == Number {
+			give = i
+			break
+		}
+	}
+
+	// 2 = playable now (a wild, or the colour in play), 1 = the right type
+	score := func(c Card) int {
+		def, _ := s.cat.Def(c)
+		switch {
+		case def.Type != t:
+			return 0
+		case def.Type.IsWild() || def.Color == s.ActiveColor:
+			return 2
+		}
+		return 1
+	}
+	var from *[]Card
+	best, at := 0, -1
+	look := func(cards *[]Card, n int) {
+		for i := 0; i < n; i++ {
+			if sc := score((*cards)[i]); sc > best {
+				best, at, from = sc, i, cards
+			}
+		}
+	}
+	look(&s.Deck.cards, len(s.Deck.cards))
+	look(&s.Discard, len(s.Discard)-1) // never the top card
+	for other := range s.Players {
+		if other != seat {
+			look(&s.Players[other].Hand, len(s.Players[other].Hand))
+		}
+	}
+	if best == 0 {
+		return fmt.Errorf("%w: no %s card left to give", ErrDebug, t)
+	}
+
+	old := hand[give]
+	if s.DrawnCard != nil && s.DrawnCard.ID == old.ID {
+		s.DrawnCard = nil // the drawn card it was holding has gone
+	}
+	hand[give], (*from)[at] = (*from)[at], old
+	return nil
+}
+
 // DebugOneCard swaps seat's hand for a single Wild, which can be played on
 // anything, so it wins on its next turn (unless it owes cards from a Draw Two
 // or Wild Draw Four first). The old hand is shuffled into the deck; if every
