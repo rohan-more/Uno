@@ -42,6 +42,7 @@ public class GameStateMsg
     public int drawnCardId; // -1 when there is none
     public int deckCount;
     public int turnMsLeft;
+    public int turnWaitMs;  // the pause left before that clock starts
     public int startsInMs;  // only before the first turn
     public int[] ranking;
     public ResultMsg[] results; // once the game is over
@@ -77,6 +78,7 @@ public class MatchEventMsg
     public string color;
     public int direction;
     public int turnMs;
+    public int waitMs;       // TURN_CHANGED: the pause before the clock starts, while the last move is shown
     public int pendingDraw;
     public string kind;      // SEAT_CONTROL
     public bool connected;   // PLAYER_CONNECTION
@@ -124,6 +126,7 @@ public static class RemovedReasons
 public class DebugSeatReq
 {
     public int seat;
+    public string card; // DEBUG_GIVE_CARD: SKIP, REVERSE, DRAW_TWO, WILD, WILD_DRAW_FOUR
 }
 
 /// <summary>Body of a PLAY_CARD message. Color is required for wild cards.</summary>
