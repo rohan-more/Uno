@@ -78,6 +78,12 @@ which makes bug reports reproducible.
 | `UI/MatchView.cs` | Draws the match from `MatchPresenter`: hands, discard pile, draw deck, cards flying between them. Turns clicks into moves (asking for a wild's colour first), blocks double sends, shows your-turn cues and the "removed" screen |
 | `UI/MatchSeatsView.cs` | Seat nameplates: avatar, name, card count, the draining turn-timer ring, place at the end. Panel 0 is you, then the players after you in turn order |
 | `UI/ResultsView.cs`, `UI/RankView.cs` | The results screen: one row per player with place, avatar ring by place, name, cards left and coins counting up; then home |
+| `UI/TurnCuesView.cs` | The arrows behind the piles, turning in the direction of play and flipping on a Reverse, and the avatar of whoever's on turn growing a little |
+| `UI/TurnBarView.cs` | The bar that slides in to say "Your Turn", "No card to play, Draw!" or "Not your turn" |
+| `UI/TableEventsView.cs` and the `*EventPanel` classes | Special-card call-outs everyone sees. `TableEventsView` picks the panel and queues them; each panel (`TableEventPanel` and its subclasses: Pop, Skip, Reverse, DrawCards, ColorChange) has its own art and animation |
+| `Audio/AudioService.cs`, `Audio/SoundLibrary.cs` | `IAudioService`: effects through a small pool of sources, music that fades out then in. Clips live in one Addressable `SoundLibrary` |
+| `Audio/MatchAudio.cs`, `Audio/SceneMusic.cs`, `Audio/ButtonSound.cs` | Match sounds from the presenter's events, each scene's track, button clicks |
+| `Debug/TableEventsPreview.cs` | Plays any special-card panel on this screen only, to check how it looks. Hidden in release builds |
 | `UI/PopupManager.cs` and the popups | `IPopupService`: one popup at a time, with a shared countdown (play or keep a drawn card, pick a colour, confirm leaving) |
 | `Debug/DebugMenu.cs` | F1 testing tools, kept alive across scenes |
 | `Utilities/CoinFormat.cs`, `Utilities/NumberCounter.cs` | `12.5K`-style coin amounts, and text that counts to a new number |
@@ -99,7 +105,16 @@ card) start from the final state and hide what hasn't landed yet.
 **One step at a time.** Server batches can hold several moves. Every event a
 view handles must end in exactly one `StepComplete()`, immediately or when its
 animation lands; otherwise the presenter waits out a 3 s timeout and the client
-falls behind the server's turn clock.
+falls behind the server's turn clock. Only `MatchView` completes steps. The
+views that decorate (sounds, call-outs, turn cues, the turn bar) only listen
+or read the state, so they can never hold the replay up.
+
+**The server sets the pace.** After each move the server pauses before the next
+turn: `turnGapSeconds`, plus `eventPauseSeconds` per call-out a special card
+shows, plus `perCardDrawSeconds` per card drawn. `TURN_CHANGED` carries that
+pause as `waitMs`, and the client starts the turn clock after it. Client
+animations are budgeted to fit inside the pause, which is what keeps every
+client in step with the server.
 
 ## How one match flows
 
@@ -124,7 +139,8 @@ falls behind the server's turn clock.
 5. **Play.** A client sends `PLAY_CARD`, `DRAW_CARD` or `PASS`. The server runs
    it through `game.Apply` and broadcasts the resulting `EVENTS` to everyone,
    with hidden cards stripped per player. An illegal move gets an `ERROR` back
-   and changes nothing.
+   and changes nothing. The next turn starts after a pause sized to the move,
+   while every client shows it.
 6. **Absent players.** Each turn has 8 seconds; running out makes the safe move.
    A dropped player keeps their seat and can rejoin. Three missed turns in a
    row, or pressing Leave, hands the seat to a bot under their name, and their
