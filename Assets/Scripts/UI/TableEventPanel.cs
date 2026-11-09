@@ -7,6 +7,7 @@ public struct TableEventContext
 {
     public int Direction; // +1 clockwise on screen, -1 anticlockwise
     public int DrawTotal; // Draw Two / Four: cards now owed, stacked ones included (0 if unknown)
+    public CardColor Color; // a wild: the colour chosen
 }
 
 /// <summary>

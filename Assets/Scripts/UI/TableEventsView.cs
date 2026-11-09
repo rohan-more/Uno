@@ -11,7 +11,6 @@ public enum TableEvent
     Skip,
     Reverse,
     ColorChange,
-    YourTurn,
 }
 
 /// <summary>
@@ -46,6 +45,7 @@ public class TableEventsView : MonoBehaviour
         new Entry { tableEvent = TableEvent.Reverse },
         new Entry { tableEvent = TableEvent.DrawTwo },
         new Entry { tableEvent = TableEvent.WildDrawFour },
+        new Entry { tableEvent = TableEvent.ColorChange },
     };
 
     [Tooltip("How long a played card takes to reach the pile, so a Draw Two's panel follows it. " +
@@ -54,7 +54,7 @@ public class TableEventsView : MonoBehaviour
     [Tooltip("Breath between two panels in a row.")]
     [SerializeField] private float betweenPanelsSeconds = 0.1f;
 
-    private readonly Queue<(TableEventPanel panel, float notBefore, int drawTotal)> queue = new();
+    private readonly Queue<(TableEventPanel panel, float notBefore, int drawTotal, CardColor color)> queue = new();
     private TableEventPanel current;
     private Coroutine running;
 
@@ -94,7 +94,12 @@ public class TableEventsView : MonoBehaviour
                 Show(TableEvent.DrawTwo, cardLandsSeconds, owedBefore + 2);
                 break;
             case CardType.WildDrawFour:
+                // Two things happened: someone owes four, and the colour changed
                 Show(TableEvent.WildDrawFour, cardLandsSeconds, owedBefore + 4);
+                Show(TableEvent.ColorChange, 0f, color: played.Color);
+                break;
+            case CardType.Wild:
+                Show(TableEvent.ColorChange, cardLandsSeconds, color: played.Color);
                 break;
         }
     }
@@ -115,15 +120,16 @@ public class TableEventsView : MonoBehaviour
 
     /// <summary>
     /// Queues the panel for a moment, shown no sooner than delay seconds from
-    /// now. drawTotal is what's owed after a Draw Two / Four, stacks included.
+    /// now. drawTotal is what's owed after a Draw Two / Four, stacks included;
+    /// color is the colour a wild chose.
     /// </summary>
-    public void Show(TableEvent tableEvent, float delay = 0f, int drawTotal = 0)
+    public void Show(TableEvent tableEvent, float delay = 0f, int drawTotal = 0, CardColor color = CardColor.Wild)
     {
         var panel = panels.Find(e => e.tableEvent == tableEvent)?.panel;
         if (panel == null)
             return;
 
-        queue.Enqueue((panel, Time.time + delay, drawTotal));
+        queue.Enqueue((panel, Time.time + delay, drawTotal, color));
         running ??= StartCoroutine(PlayQueue());
     }
 
@@ -131,13 +137,18 @@ public class TableEventsView : MonoBehaviour
     {
         while (queue.Count > 0)
         {
-            var (panel, notBefore, drawTotal) = queue.Dequeue();
+            var (panel, notBefore, drawTotal, color) = queue.Dequeue();
             while (Time.time < notBefore)
                 yield return null;
 
             // Read when it plays, not when it was queued: a Reverse spins the
             // way play goes now
-            var context = new TableEventContext { Direction = presenter.State.Direction, DrawTotal = drawTotal };
+            var context = new TableEventContext
+            {
+                Direction = presenter.State.Direction,
+                DrawTotal = drawTotal,
+                Color = color,
+            };
 
             bool done = false;
             current = panel;

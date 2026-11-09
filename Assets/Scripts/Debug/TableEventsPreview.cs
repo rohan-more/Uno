@@ -16,6 +16,8 @@ public class TableEventsPreview : MonoBehaviour
     [SerializeField] private Button playButton;
     [Tooltip("For Draw Two / Four: how many are stacked, to see the x2 / x3 badge. 1 = not stacked.")]
     [Min(1)] [SerializeField] private int stack = 1;
+    [Tooltip("For ColorChange: the colour to show.")]
+    [SerializeField] private CardColor color = CardColor.Blue;
 
     private static readonly TableEvent[] Events = (TableEvent[])Enum.GetValues(typeof(TableEvent));
 
@@ -52,6 +54,6 @@ public class TableEventsPreview : MonoBehaviour
             return;
         var tableEvent = Events[Mathf.Clamp(eventDropdown.value, 0, Events.Length - 1)];
         int perCard = tableEvent == TableEvent.DrawTwo ? 2 : tableEvent == TableEvent.WildDrawFour ? 4 : 0;
-        view.Show(tableEvent, 0f, perCard * stack);
+        view.Show(tableEvent, 0f, perCard * stack, color);
     }
 }
