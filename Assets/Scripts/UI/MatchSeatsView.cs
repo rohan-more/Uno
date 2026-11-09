@@ -52,6 +52,9 @@ public class MatchSeatsView : MonoBehaviour
     [SerializeField] private Gradient timerColor = DefaultTimerColor();
 
     [SerializeField] private int maxNameLength = 12;
+    [Tooltip("Card counts above this read \"9+\": a big hand doesn't need the exact number, " +
+             "and the fan stops growing there too (OpponentFanLayout's Max Visible Cards).")]
+    [SerializeField] private int maxShownCount = 9;
     [SerializeField] private float disconnectedAlpha = 0.5f;
 
     private void Awake()
@@ -163,7 +166,9 @@ public class MatchSeatsView : MonoBehaviour
                 panel.avatar.sprite = avatars.Get(seat.Avatar);
 
             if (panel.cardCountText != null)
-                panel.cardCountText.text = seat.CardCount.ToString();
+                panel.cardCountText.text = seat.CardCount > maxShownCount
+                    ? $"{maxShownCount}+"
+                    : seat.CardCount.ToString();
 
             if (panel.turnHighlight != null)
                 panel.turnHighlight.SetActive(seat.Index == state.CurrentSeat && !seat.HasFinished);
