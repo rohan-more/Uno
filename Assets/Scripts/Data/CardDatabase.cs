@@ -39,7 +39,24 @@ public class CardDatabase : ScriptableObject
     [Tooltip("The one back every card shares. Anything showing a face-down card reads it from here.")]
     [SerializeField] private Sprite cardBack;
 
+    [Header("Colour cards")]
+    [Tooltip("Plain cards in each colour, shown when a wild picks one.")]
+    [SerializeField] private Sprite redCard;
+    [SerializeField] private Sprite yellowCard;
+    [SerializeField] private Sprite greenCard;
+    [SerializeField] private Sprite blueCard;
+
     public Sprite CardBack => cardBack;
+
+    /// <summary>The plain card for a colour, e.g. when a wild picks it; null for Wild.</summary>
+    public Sprite ColorCard(CardColor color) => color switch
+    {
+        CardColor.Red => redCard,
+        CardColor.Yellow => yellowCard,
+        CardColor.Green => greenCard,
+        CardColor.Blue => blueCard,
+        _ => null,
+    };
 
     private Dictionary<string, CardDefinition> lookup;
 

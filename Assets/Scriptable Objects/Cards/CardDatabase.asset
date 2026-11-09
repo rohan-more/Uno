@@ -500,3 +500,7 @@ MonoBehaviour:
     IsWild: 1
     DrawAmount: 4
   cardBack: {fileID: 21300000, guid: 007a6f01c7fbf0c4993bf49f1f872a52, type: 3}
+  redCard: {fileID: -43254551, guid: 582bf4306635f6b4280bdcedd9c03568, type: 3}
+  yellowCard: {fileID: -2107840502, guid: 582bf4306635f6b4280bdcedd9c03568, type: 3}
+  greenCard: {fileID: 602386641, guid: 582bf4306635f6b4280bdcedd9c03568, type: 3}
+  blueCard: {fileID: -952990345, guid: 582bf4306635f6b4280bdcedd9c03568, type: 3}

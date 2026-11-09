@@ -20,7 +20,9 @@ public class CardProxyView : MonoBehaviour
     [SerializeField] private RectTransform centerTransform;
     [SerializeField] private Vector2  proxyIdlePosition;
     [Header("Movement")]
-    [SerializeField] private float moveSpeed = 1500f; // units per second
+    [SerializeField] private float moveSpeed = 1500f; // units per second, on average
+    [Tooltip("Even short hops take at least this long, so every move can be followed.")]
+    [SerializeField] private float minMoveSeconds = 0.35f;
 
     private RectTransform rt;
     private Coroutine moveRoutine;
@@ -163,12 +165,17 @@ public class CardProxyView : MonoBehaviour
         return anchored;
     }
 
+    // Takes as long as the distance at moveSpeed would, but eases out and in,
+    // so the eye catches where a card leaves from and where it lands.
     private IEnumerator MoveAtConstantSpeed(Vector2 targetAnchoredPos, float speedMultiplier, System.Action onComplete)
     {
-        while (Vector2.Distance(rt.anchoredPosition, targetAnchoredPos) > 0.5f)
-        {
-            rt.anchoredPosition = Vector2.MoveTowards(rt.anchoredPosition, targetAnchoredPos, moveSpeed * speedMultiplier * Time.deltaTime);
+        Vector2 from = rt.anchoredPosition;
+        float seconds = Vector2.Distance(from, targetAnchoredPos) / Mathf.Max(1f, moveSpeed * speedMultiplier);
+        seconds = Mathf.Max(seconds, minMoveSeconds / Mathf.Max(1f, speedMultiplier));
 
+        for (float t = 0f; t < seconds; t += Time.deltaTime)
+        {
+            rt.anchoredPosition = Vector2.LerpUnclamped(from, targetAnchoredPos, Mathf.SmoothStep(0f, 1f, t / seconds));
             yield return null;
         }
 

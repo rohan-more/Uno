@@ -10,8 +10,9 @@ player is allowed to see.
 > **Status: playable, in progress.** A full four-player match runs end to end
 > over the network: a loading screen, login, matchmaking, lobbies with bots,
 > dealing, turns with an 8-second timer, bots quietly taking over absent players,
-> reconnecting, matches played for coin stakes, and a results screen. Rematch
-> and deployment are next; see the [roadmap](#roadmap).
+> reconnecting, matches played for coin stakes, a results screen, music and
+> card sounds, and call-outs for every special card. Rematch and deployment are
+> next; see the [roadmap](#roadmap).
 
 <!-- TODO: demo.gif — four windows finding each other and filling a lobby -->
 
@@ -45,6 +46,16 @@ player is allowed to see.
   server event to the client's view of the table, then hands it to the UI one
   at a time and waits for its animation, so a burst of bot moves never
   overlaps on screen.
+- **The server sets the pace, so play is easy to follow.** After each move it
+  pauses long enough for every client to show it: a beat for any card, longer
+  for a special card's call-out, and time for each drawn card to fly in. The
+  turn clock starts after the pause, so nobody loses seconds to an animation,
+  and a client can never fall behind the server.
+- **Special cards are called out to everyone.** Skip stamps a block sign,
+  Reverse spins arrows the new way round, Draw Two / Four fan cards out (with
+  x2 / x3 when stacked), and a wild washes the screen in its colour. Every
+  client sees the same events in the same order, so everyone sees the same
+  call-outs, with no extra messages.
 
 ## Architecture
 
@@ -76,7 +87,7 @@ NakamaConnection  ──── RPC ──────────▶ find_match 
 | Client | Unity 2022.3 (URP), C#, TextMeshPro, DOTween |
 | Server | Go 1.26 plugin for Nakama 3.40 |
 | Infra | Docker Compose, PostgreSQL 16 |
-| Tests | `go test`: 126 cases covering rules, ranking, deck, bots, lobby, turn timeouts, seat takeover, message visibility, wallet, free coins and stakes |
+| Tests | `go test`: 131 cases covering rules, ranking, deck, bots, lobby, turn timeouts, pacing, seat takeover, message visibility, wallet, free coins and stakes |
 
 ## Run it
 
@@ -98,7 +109,8 @@ matches cost a stake.
 
 **F1** opens testing tools while the server runs with `UNO_DEBUG_TOOLS=true`
 (set in `server/local.yml`): drop the connection, grant or take coins, top up
-free coins, and make any player win now or hold a single Wild.
+free coins, make any player win now or hold a single Wild, and hand any player
+a chosen special card to play.
 
 To test multiplayer on one machine, build for Windows and start the executable
 several times: each window claims its own profile and logs in as a different
@@ -127,6 +139,9 @@ cd server && go test ./...
 - [x] Coins: starting coins, a free-coins rescue, stakes, payouts by place,
       escrow and refunds
 - [x] Results screen
+- [x] Music and card sounds; call-outs for special cards; turn direction and
+      whose turn it is; a pace that's easy to follow
+- [ ] Sounds for every moment, audio settings
 - [ ] Rematch, stake tiers
 - [ ] Stronger bot, deployment
 

@@ -11,6 +11,7 @@ using UnityEngine;
 ///   Connection  NakamaConnection, in its Awake (Startup scene, lives all session).
 ///   Wallet      NakamaConnection too, alongside itself; it talks through it.
 ///   Popups      each scene's PopupManager, in its Awake; gone with the scene.
+///   Audio       AudioService, in its Awake (Startup scene, lives all session).
 ///
 /// Every owner unregisters in OnDestroy, so a destroyed object never lingers
 /// here (an interface can't be compared to null the way Unity objects can).
@@ -21,11 +22,13 @@ public static class Services
     public static IWalletService Wallet { get; private set; }
     public static IAssetService Assets { get; private set; }
     public static IPopupService Popups { get; private set; }
+    public static IAudioService Audio { get; private set; }
 
     public static void Register(IConnectionService connection) => Connection = connection;
     public static void Register(IWalletService wallet) => Wallet = wallet;
     public static void Register(IAssetService assets) => Assets = assets;
     public static void Register(IPopupService popups) => Popups = popups;
+    public static void Register(IAudioService audio) => Audio = audio;
 
     // Only the registered one is removed, so a duplicate being destroyed
     // doesn't take the real service with it.
@@ -48,6 +51,12 @@ public static class Services
             Popups = null;
     }
 
+    public static void Unregister(IAudioService audio)
+    {
+        if (ReferenceEquals(Audio, audio))
+            Audio = null;
+    }
+
     // Runs before any scene loads, including with domain reload turned off,
     // so a previous Play session never leaks in.
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -56,6 +65,7 @@ public static class Services
         Connection = null;
         Wallet = null;
         Popups = null;
+        Audio = null;
         Assets = new GameAssets();
     }
 }

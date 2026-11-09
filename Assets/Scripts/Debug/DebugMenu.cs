@@ -49,6 +49,10 @@ public class DebugMenu : MonoBehaviour
     [SerializeField] private Button instantWinButton;
     [Tooltip("The chosen player is left holding one Wild, and wins on their next turn.")]
     [SerializeField] private Button oneCardButton;
+    [Tooltip("Which special card Give Card hands the chosen player. Filled in at start.")]
+    [SerializeField] private TMP_Dropdown cardDropdown;
+    [Tooltip("Swaps one of the chosen player's cards for that special card, playable now if it can be.")]
+    [SerializeField] private Button giveCardButton;
 
     [Header("Optional")]
     [SerializeField] private Button closeButton;
@@ -61,6 +65,7 @@ public class DebugMenu : MonoBehaviour
     private readonly List<int> dropdownSeats = new();
     private string dropdownKey = "";
     private MatchPresenter presenter;
+    private MatchSeatsView seatsView;
 
     private void Awake()
     {
@@ -76,6 +81,12 @@ public class DebugMenu : MonoBehaviour
 
         if (panel != null)
             panel.SetActive(false);
+
+        if (cardDropdown != null)
+        {
+            cardDropdown.ClearOptions();
+            cardDropdown.AddOptions(new List<string>(System.Array.ConvertAll(GiftCards, g => g.label)));
+        }
     }
 
     private void OnEnable()
@@ -94,6 +105,8 @@ public class DebugMenu : MonoBehaviour
             instantWinButton.onClick.AddListener(InstantWin);
         if (oneCardButton != null)
             oneCardButton.onClick.AddListener(DownToOneCard);
+        if (giveCardButton != null)
+            giveCardButton.onClick.AddListener(GiveCard);
     }
 
     private void OnDisable()
@@ -112,6 +125,8 @@ public class DebugMenu : MonoBehaviour
             instantWinButton.onClick.RemoveListener(InstantWin);
         if (oneCardButton != null)
             oneCardButton.onClick.RemoveListener(DownToOneCard);
+        if (giveCardButton != null)
+            giveCardButton.onClick.RemoveListener(GiveCard);
     }
 
     private void Update()
@@ -180,21 +195,31 @@ public class DebugMenu : MonoBehaviour
             instantWinButton.interactable = state != null;
         if (oneCardButton != null)
             oneCardButton.interactable = state != null;
+        if (giveCardButton != null)
+            giveCardButton.interactable = state != null;
+        if (cardDropdown != null)
+            cardDropdown.interactable = state != null;
         if (playerDropdown == null)
             return;
         playerDropdown.interactable = state != null;
 
-        // Table order from you, clockwise, as on screen. Only rebuilt when the
-        // players change, so a choice isn't reset every frame.
+        // Table order from you, clockwise, each with where they sit on screen,
+        // and the player just before you marked: what they play lands on you.
+        // Only rebuilt when that changes, so a choice isn't reset every frame.
         var labels = new List<string>();
         var seats = new List<int>();
         if (state != null)
         {
-            for (int offset = 0; offset < state.Seats.Length; offset++)
+            int n = state.Seats.Length;
+            int beforeYou = ((state.YourSeat - state.Direction) % n + n) % n;
+            for (int offset = 0; offset < n; offset++)
             {
-                int seat = (state.YourSeat + offset) % state.Seats.Length;
+                int seat = (state.YourSeat + offset) % n;
                 var name = state.SeatAt(seat)?.Name ?? $"Seat {seat}";
-                labels.Add(offset == 0 ? $"You ({name})" : name);
+                var label = offset == 0 ? $"You ({name})" : $"{Where(seat)}: {name}";
+                if (seat == beforeYou && offset != 0)
+                    label += " (plays before you)";
+                labels.Add(label);
                 seats.Add(seat);
             }
         }
@@ -202,12 +227,36 @@ public class DebugMenu : MonoBehaviour
         var key = string.Join("|", labels);
         if (key == dropdownKey)
             return;
+
+        // Keep the same player chosen if they're still there
+        int chosen = playerDropdown.value < dropdownSeats.Count ? dropdownSeats[playerDropdown.value] : -1;
         dropdownKey = key;
         dropdownSeats.Clear();
         dropdownSeats.AddRange(seats);
         playerDropdown.ClearOptions();
         playerDropdown.AddOptions(labels.Count > 0 ? labels : new List<string> { "Not in a match" });
-        playerDropdown.SetValueWithoutNotify(0);
+        playerDropdown.SetValueWithoutNotify(Mathf.Max(0, seats.IndexOf(chosen)));
+    }
+
+    // Where a server seat sits on this screen, e.g. "Top-left", from the match's seat panels
+    private string Where(int serverSeat)
+    {
+        if (seatsView == null)
+            seatsView = FindObjectOfType<MatchSeatsView>();
+        if (seatsView == null)
+            return $"Seat {serverSeat}";
+
+        return seatsView.SeatPositionFor(serverSeat) switch
+        {
+            PlayerSeat.BottomPlayer => "Bottom",
+            PlayerSeat.BottomLeftPlayer => "Bottom-left",
+            PlayerSeat.BottomRightPlayer => "Bottom-right",
+            PlayerSeat.TopPlayer => "Top",
+            PlayerSeat.TopLeftPlayer => "Top-left",
+            PlayerSeat.TopRightPlayer => "Top-right",
+            PlayerSeat.RightPlayer => "Right",
+            var other => other.ToString(),
+        };
     }
 
     private bool TryChosenSeat(out int seat, out string name)
@@ -225,9 +274,26 @@ public class DebugMenu : MonoBehaviour
 
     private void DownToOneCard() => SendRig(UnoOpCodes.DebugOneCard, "is down to one Wild");
 
+    // The special cards Give Card offers, as the dropdown shows them and the server names them
+    private static readonly (string label, string card)[] GiftCards =
+    {
+        ("Draw Two", "DRAW_TWO"),
+        ("Wild Draw Four", "WILD_DRAW_FOUR"),
+        ("Skip", "SKIP"),
+        ("Reverse", "REVERSE"),
+        ("Wild", "WILD"),
+    };
+
+    private void GiveCard()
+    {
+        int i = cardDropdown != null ? cardDropdown.value : 0;
+        var gift = GiftCards[Mathf.Clamp(i, 0, GiftCards.Length - 1)];
+        SendRig(UnoOpCodes.DebugGiveCard, $"gets a {gift.label}", gift.card);
+    }
+
     // Problems (debug tools off, game already over) come back as match errors
     // and show in the console.
-    private async void SendRig(long opCode, string what)
+    private async void SendRig(long opCode, string what, string card = null)
     {
         if (!TryChosenSeat(out var seat, out var name))
         {
@@ -235,7 +301,7 @@ public class DebugMenu : MonoBehaviour
             return;
         }
 
-        await Connection.SendMatchStateAsync(opCode, JsonUtility.ToJson(new DebugSeatReq { seat = seat }));
+        await Connection.SendMatchStateAsync(opCode, JsonUtility.ToJson(new DebugSeatReq { seat = seat, card = card }));
         SetText(statusText, $"Asked: {name} {what}");
     }
 

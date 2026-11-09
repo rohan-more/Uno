@@ -167,7 +167,7 @@ func TestPendingDraw_TakenAtOnceWhenNothingStacks(t *testing.T) {
 		}
 	}
 	s.game.Players[0].Hand = hand
-	s.beginTurn()
+	s.beginTurn(0)
 	before := len(hand)
 
 	d := &fakeDispatcher{}
@@ -301,7 +301,7 @@ func drewWild(t *testing.T) *MatchState {
 	s := dealtMatch(t)
 	s.preMatchTicks = 0
 	s.game.Current = 0
-	s.beginTurn()
+	s.beginTurn(0)
 	card := game.Card{ID: 900, DefID: "WILD"}
 	s.game.Players[0].Hand = append(s.game.Players[0].Hand, card)
 	s.game.DrawnCard = &card
@@ -534,5 +534,70 @@ func TestDebugOneCard_SendsEveryoneAFreshSnapshot(t *testing.T) {
 	}
 	if got := d.count(OpGameState); got != 2 {
 		t.Errorf("GAME_STATE sent %d times, want once to each human", got)
+	}
+}
+
+func TestPauseAfter_LongerForSpecialCardsAndDraws(t *testing.T) {
+	s := dealtMatch(t)
+	cfg := s.cfg
+	card := func(defID string) game.Event {
+		return game.Event{Type: game.EvCardPlayed, Card: game.Card{ID: 1, DefID: defID}}
+	}
+	drawn := game.Event{Type: game.EvCardsDrawn, Cards: make([]game.Card, 4)}
+
+	tests := []struct {
+		name   string
+		events []game.Event
+		want   int
+	}{
+		{"number card", []game.Event{card("RED_5")}, cfg.TurnGapMs},
+		{"draw two", []game.Event{card("RED_DRAW_TWO")}, cfg.TurnGapMs + cfg.EventPauseMs},
+		{"wild", []game.Event{card("WILD")}, cfg.TurnGapMs + cfg.EventPauseMs},
+		{"wild draw four", []game.Event{card("WILD_DRAW_FOUR")}, cfg.TurnGapMs + 2*cfg.EventPauseMs},
+		{"four drawn", []game.Event{drawn}, cfg.TurnGapMs + 4*cfg.DrawCardMs},
+	}
+	for _, tt := range tests {
+		if got := s.pauseAfter(tt.events); got != tt.want {
+			t.Errorf("%s: pause %d ms, want %d", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestTurnChanged_SaysHowLongBeforeTheClockStarts(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	d := &fakeDispatcher{}
+
+	seat := s.game.Current
+	s.applyAction(testLogger{}, d, seat, game.Action{Type: game.DrawCard}, nil)
+	if s.game.DrawnCard != nil { // a playable draw: pass on it so the turn moves
+		s.applyAction(testLogger{}, d, seat, game.Action{Type: game.Pass}, nil)
+	}
+
+	turns := d.events(EvTurnChanged)
+	if len(turns) == 0 {
+		t.Fatal("the turn should have moved on")
+	}
+	if turns[0].WaitMs != s.gapTicks*msPerTick || turns[0].WaitMs < s.cfg.TurnGapMs {
+		t.Errorf("waitMs = %d, want the pause (%d ms)", turns[0].WaitMs, s.gapTicks*msPerTick)
+	}
+}
+
+func TestDebugGiveCard_SendsEveryoneAFreshSnapshot(t *testing.T) {
+	s := dealtMatch(t)
+	s.preMatchTicks = 0
+	s.seats[0].presence = fakePresence{userID: "u0"}
+	s.seats[2].presence = fakePresence{userID: "u2"}
+	d := &fakeDispatcher{}
+
+	msg := fakeMatchData{fakePresence: fakePresence{userID: "u0"}, opCode: OpDebugGiveCard, data: []byte(`{"seat":1,"card":"DRAW_TWO"}`)}
+	s.handleMessages(debugCtx(), testLogger{}, nil, d, []runtime.MatchData{msg})
+
+	if got := d.count(OpGameState); got != 2 {
+		t.Errorf("GAME_STATE sent %d times, want once to each human", got)
+	}
+	if d.hasError(ErrCodeBadMessage) {
+		t.Errorf("give card was refused: %+v", d.errors())
 	}
 }

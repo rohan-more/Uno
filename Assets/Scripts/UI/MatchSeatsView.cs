@@ -30,7 +30,8 @@ public class MatchSeatsView : MonoBehaviour
         public GameObject turnHighlight;
 
         [Tooltip("Optional: a Filled (Radial 360) Image around the avatar. Shown on " +
-                 "this player's turn and drains as their time runs out.")]
+                 "this player's turn and drains as their time runs out. Only the Image is " +
+                 "switched off between turns, so it may sit on the avatar's parent.")]
         public Image turnTimer;
 
         [Tooltip("Optional: shown when they finish, e.g. \"1st\".")]
@@ -51,6 +52,9 @@ public class MatchSeatsView : MonoBehaviour
     [SerializeField] private Gradient timerColor = DefaultTimerColor();
 
     [SerializeField] private int maxNameLength = 12;
+    [Tooltip("Card counts above this read \"9+\": a big hand doesn't need the exact number, " +
+             "and the fan stops growing there too (OpponentFanLayout's Max Visible Cards).")]
+    [SerializeField] private int maxShownCount = 9;
     [SerializeField] private float disconnectedAlpha = 0.5f;
 
     private void Awake()
@@ -115,9 +119,10 @@ public class MatchSeatsView : MonoBehaviour
             if (panel?.turnTimer == null)
                 continue;
 
+            // The Image, not its GameObject: the avatar is often a child of the ring
             bool show = panel == active;
-            if (panel.turnTimer.gameObject.activeSelf != show)
-                panel.turnTimer.gameObject.SetActive(show);
+            if (panel.turnTimer.enabled != show)
+                panel.turnTimer.enabled = show;
 
             if (show)
             {
@@ -161,7 +166,9 @@ public class MatchSeatsView : MonoBehaviour
                 panel.avatar.sprite = avatars.Get(seat.Avatar);
 
             if (panel.cardCountText != null)
-                panel.cardCountText.text = seat.CardCount.ToString();
+                panel.cardCountText.text = seat.CardCount > maxShownCount
+                    ? $"{maxShownCount}+"
+                    : seat.CardCount.ToString();
 
             if (panel.turnHighlight != null)
                 panel.turnHighlight.SetActive(seat.Index == state.CurrentSeat && !seat.HasFinished);

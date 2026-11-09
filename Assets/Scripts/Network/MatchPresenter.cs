@@ -165,7 +165,7 @@ public class MatchPresenter : MonoBehaviour
         _busy = false;
 
         State.ApplySnapshot(msg);
-        _turnEndsAt = Time.time + msg.turnMsLeft / 1000f;
+        _turnEndsAt = Time.time + (msg.turnWaitMs + msg.turnMsLeft) / 1000f;
         OnSnapshot?.Invoke(State);
     }
 
@@ -291,7 +291,8 @@ public class MatchPresenter : MonoBehaviour
                 State.DrawnCardId = -1;
                 if (e.turnMs > 0)
                     _turnMs = e.turnMs;
-                _turnEndsAt = arrived + _turnMs / 1000f;
+                // The server shows everyone the last move before the clock starts
+                _turnEndsAt = arrived + (e.waitMs + _turnMs) / 1000f;
                 break;
 
             case UnoEventTypes.TurnExtended:
