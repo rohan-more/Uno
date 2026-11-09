@@ -542,20 +542,23 @@ func (s *MatchState) beginTurn(pauseMs int) {
 // behind the turn clock.
 func (s *MatchState) pauseAfter(events []game.Event) int {
 	ms := s.cfg.TurnGapMs
-	special := false
+	banners := 0 // how many special-card panels the clients will show
 	for _, e := range events {
 		switch e.Type {
 		case game.EvCardPlayed:
-			if def, ok := s.game.Def(e.Card); ok && def.Type != game.Number {
-				special = true
+			def, ok := s.game.Def(e.Card)
+			switch {
+			case !ok || def.Type == game.Number:
+			case def.Type == game.WildDrawFour:
+				banners += 2 // "Draw 4!", then the new colour
+			default:
+				banners++
 			}
 		case game.EvCardsDrawn:
 			ms += len(e.Cards) * s.cfg.DrawCardMs
 		}
 	}
-	if special {
-		ms += s.cfg.EventPauseMs
-	}
+	ms += banners * s.cfg.EventPauseMs
 	return ms
 }
 

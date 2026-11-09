@@ -299,9 +299,9 @@ allowed, e.g. `1.2`) and minutes. The server converts them on load.
 ```
 
 After every move the server pauses before the next turn, so every client can
-show it: `turnGapSeconds`, plus `eventPauseSeconds` after a special card (Skip,
-Reverse, Draw Two, a wild) for its banner, plus `perCardDrawSeconds` for each
-card drawn. A bot thinks, or a player's clock starts, only after the pause.
+show it: `turnGapSeconds`, plus `eventPauseSeconds` for each banner a special
+card shows (one for Skip, Reverse, Draw Two or Wild; two for Wild Draw Four,
+which also changes the colour), plus `perCardDrawSeconds` for each card drawn. A bot thinks, or a player's clock starts, only after the pause.
 
 **`config` / `economy`**: coins. Read on every wallet request, so edits apply
 at once.

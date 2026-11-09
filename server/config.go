@@ -41,7 +41,7 @@ type MatchConfig struct {
 	TurnGapMs  int // pause after any move, so every client can show it
 
 	// Extra pause so players can take in what happened, on top of TurnGapMs
-	EventPauseMs int // a special card (Skip, Reverse, Draw Two, a wild): time for its banner
+	EventPauseMs int // per banner a special card shows (Skip, Reverse, Draw Two, a wild; two for Wild Draw Four)
 	DrawCardMs   int // per card drawn: time for it to fly into the hand
 
 	// Absent players

@@ -553,6 +553,7 @@ func TestPauseAfter_LongerForSpecialCardsAndDraws(t *testing.T) {
 		{"number card", []game.Event{card("RED_5")}, cfg.TurnGapMs},
 		{"draw two", []game.Event{card("RED_DRAW_TWO")}, cfg.TurnGapMs + cfg.EventPauseMs},
 		{"wild", []game.Event{card("WILD")}, cfg.TurnGapMs + cfg.EventPauseMs},
+		{"wild draw four", []game.Event{card("WILD_DRAW_FOUR")}, cfg.TurnGapMs + 2*cfg.EventPauseMs},
 		{"four drawn", []game.Event{drawn}, cfg.TurnGapMs + 4*cfg.DrawCardMs},
 	}
 	for _, tt := range tests {
