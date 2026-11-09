@@ -700,6 +700,7 @@ MonoBehaviour:
     m_NumColorKeys: 3
     m_NumAlphaKeys: 2
   maxNameLength: 12
+  maxShownCount: 9
   disconnectedAlpha: 0.5
 --- !u!114 &771139324
 MonoBehaviour:
@@ -1334,6 +1335,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: OverlayCanvas
       objectReference: {fileID: 0}
+    - target: {fileID: 4820695515388420417, guid: fd042ae2bc997d94990b7823e18756e0, type: 3}
+      propertyPath: actionBus
+      value: 
+      objectReference: {fileID: 771139320}
+    - target: {fileID: 4820695515388420417, guid: fd042ae2bc997d94990b7823e18756e0, type: 3}
+      propertyPath: presenter
+      value: 
+      objectReference: {fileID: 771139322}
     - target: {fileID: 5291530149366166106, guid: fd042ae2bc997d94990b7823e18756e0, type: 3}
       propertyPath: m_Pivot.x
       value: 0
